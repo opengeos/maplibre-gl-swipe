@@ -2,6 +2,8 @@
 
 [![npm version](https://img.shields.io/npm/v/maplibre-gl-swipe.svg)](https://www.npmjs.com/package/maplibre-gl-swipe)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Open in CodeSandbox](https://img.shields.io/badge/Open%20in-CodeSandbox-blue?logo=codesandbox)](https://codesandbox.io/p/github/opengeos/maplibre-gl-swipe)
+[![Open in StackBlitz](https://img.shields.io/badge/Open%20in-StackBlitz-blue?logo=stackblitz)](https://stackblitz.com/github/opengeos/maplibre-gl-swipe)
 
 A MapLibre GL plugin for swiping layers to compare them side by side.
 
