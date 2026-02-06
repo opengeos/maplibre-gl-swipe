@@ -69,6 +69,12 @@ export interface SwipeControlOptions {
    * @default false
    */
   mousemove?: boolean;
+
+  /**
+   * Whether the swipe tool starts active
+   * @default true
+   */
+  active?: boolean;
 }
 
 /**
@@ -104,6 +110,11 @@ export interface SwipeState {
    * Whether the slider is currently being dragged
    */
   isDragging: boolean;
+
+  /**
+   * Whether the swipe tool is currently active
+   */
+  active: boolean;
 }
 
 /**
@@ -117,6 +128,8 @@ export type SwipeControlEvent =
   | 'orientationchange'
   | 'collapse'
   | 'expand'
+  | 'activate'
+  | 'deactivate'
   | 'statechange';
 
 /**
@@ -167,6 +180,17 @@ export interface SwipeControlReactProps extends SwipeControlOptions {
    * Callback fired when the state changes
    */
   onStateChange?: (state: SwipeState) => void;
+
+  /**
+   * Callback fired when the active state changes
+   */
+  onActiveChange?: (active: boolean) => void;
+
+  /**
+   * Whether the swipe tool is active
+   * @default true
+   */
+  active?: boolean;
 }
 
 /**

@@ -67,6 +67,7 @@ map.on('load', () => {
     collapsed: false,
     title: 'Layer Comparison',
     panelWidth: 280,
+    active: false,
   });
 
   // Add control to the map

@@ -40,6 +40,8 @@ export function SwipeControlReact({
   onSlide,
   onLayerChange,
   onStateChange,
+  onActiveChange,
+  active,
   ...options
 }: SwipeControlReactProps): null {
   const controlRef = useRef<SwipeControl | null>(null);
@@ -69,6 +71,15 @@ export function SwipeControlReact({
     if (onStateChange) {
       control.on('statechange', (event) => {
         onStateChange(event.state);
+      });
+    }
+
+    if (onActiveChange) {
+      control.on('activate', () => {
+        onActiveChange(true);
+      });
+      control.on('deactivate', () => {
+        onActiveChange(false);
       });
     }
 
@@ -125,6 +136,13 @@ export function SwipeControlReact({
       }
     }
   }, [options.collapsed]);
+
+  // Handle active state
+  useEffect(() => {
+    if (controlRef.current && active !== undefined) {
+      controlRef.current.setActive(active);
+    }
+  }, [active]);
 
   return null;
 }

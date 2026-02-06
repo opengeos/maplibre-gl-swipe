@@ -62,6 +62,9 @@
   border-left: 1px solid rgba(0, 0, 0, 0.3);
   border-right: 1px solid rgba(0, 0, 0, 0.3);
   cursor: ew-resize;
+  transform: translateX(-50%) translateZ(0);
+  will-change: left;
+  backface-visibility: hidden;
 }
 
 .swipe-slider-horizontal {
@@ -72,6 +75,9 @@
   border-top: 1px solid rgba(0, 0, 0, 0.3);
   border-bottom: 1px solid rgba(0, 0, 0, 0.3);
   cursor: ns-resize;
+  transform: translateY(-50%) translateZ(0);
+  will-change: top;
+  backface-visibility: hidden;
 }
 
 .swipe-slider-handle {
@@ -109,10 +115,12 @@
 .swipe-slider.dragging .swipe-slider-handle {
   transform: translate(-50%, -50%) scale(1.1);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: box-shadow 0.1s ease;
 }
 
 .swipe-slider-horizontal.dragging .swipe-slider-handle {
   transform: translate(-50%, -50%) rotate(90deg) scale(1.1);
+  transition: box-shadow 0.1s ease;
 }
 
 .swipe-handle-icon {
@@ -307,6 +315,75 @@
 .swipe-control-content::-webkit-scrollbar-thumb:hover,
 .swipe-layer-list::-webkit-scrollbar-thumb:hover {
   background: #aaa;
+}
+
+/* ============================================
+   Toggle Switch
+   ============================================ */
+.swipe-toggle-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.swipe-toggle-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+}
+
+.swipe-toggle-slider {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.swipe-toggle-slider input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.swipe-toggle-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  border-radius: 10px;
+  transition: background-color 0.2s ease;
+}
+
+.swipe-toggle-track::before {
+  content: '';
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 2px;
+  bottom: 2px;
+  background-color: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.swipe-toggle-slider input:checked + .swipe-toggle-track {
+  background-color: #4a90d9;
+}
+
+.swipe-toggle-slider input:checked + .swipe-toggle-track::before {
+  transform: translateX(16px);
+}
+
+.swipe-toggle-slider input:focus + .swipe-toggle-track {
+  box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.3);
 }
 
 /* ============================================

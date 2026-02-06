@@ -11,6 +11,7 @@ const DEFAULT_STATE: SwipeState = {
   leftLayers: [],
   rightLayers: [],
   isDragging: false,
+  active: true,
 };
 
 /**
@@ -105,6 +106,13 @@ export function useSwipeState(initialState?: Partial<SwipeState>) {
   }, []);
 
   /**
+   * Sets the active state
+   */
+  const setActive = useCallback((active: boolean) => {
+    setState((prev) => ({ ...prev, active }));
+  }, []);
+
+  /**
    * Toggles the collapsed state
    */
   const toggle = useCallback(() => {
@@ -166,6 +174,7 @@ export function useSwipeState(initialState?: Partial<SwipeState>) {
     setLeftLayers,
     setRightLayers,
     setCollapsed,
+    setActive,
     toggle,
     reset,
     addLeftLayer,

@@ -11,6 +11,7 @@ A MapLibre GL plugin for swiping layers to compare them side by side.
 
 - **Draggable slider** - Interactive slider to compare layers
 - **Vertical and horizontal orientation** - Compare left/right or top/bottom
+- **Activate/deactivate toggle** - Temporarily disable swipe without removing the control
 - **Programmatic API** - Set layers and position via code
 - **Interactive GUI** - Panel to select layers for comparison
 - **React support** - React wrapper component and hooks
@@ -123,6 +124,7 @@ The main control class that implements MapLibre's `IControl` interface.
 | `panelWidth`  | `number`                     | `280`           | Panel width in pixels           |
 | `className`   | `string`                     | `''`            | Custom CSS class                |
 | `mousemove`   | `boolean`                    | `false`         | Slider follows mouse            |
+| `active`      | `boolean`                    | `true`          | Whether swipe starts active     |
 
 #### Methods
 
@@ -134,6 +136,8 @@ The main control class that implements MapLibre's `IControl` interface.
 | `setLeftLayers(layerIds)`     | Sets left/top side layers               |
 | `setRightLayers(layerIds)`    | Sets right/bottom side layers           |
 | `setOrientation(orientation)` | Sets slider orientation                 |
+| `setActive(active)`           | Activates or deactivates the swipe tool |
+| `isActive()`                  | Returns whether the swipe tool is active |
 | `getLayers()`                 | Returns all map layers info             |
 | `toggle()`                    | Toggles panel visibility                |
 | `expand()`                    | Expands the panel                       |
@@ -144,16 +148,18 @@ The main control class that implements MapLibre's `IControl` interface.
 
 #### Events
 
-| Event               | Description                    |
-| ------------------- | ------------------------------ |
-| `slidestart`        | Fired when slider drag starts  |
-| `slide`             | Fired during slider movement   |
-| `slideend`          | Fired when slider drag ends    |
-| `layerchange`       | Fired when layers are changed  |
-| `orientationchange` | Fired when orientation changes |
-| `collapse`          | Fired when panel collapses     |
-| `expand`            | Fired when panel expands       |
-| `statechange`       | Fired on any state change      |
+| Event               | Description                        |
+| ------------------- | ---------------------------------- |
+| `slidestart`        | Fired when slider drag starts      |
+| `slide`             | Fired during slider movement       |
+| `slideend`          | Fired when slider drag ends        |
+| `layerchange`       | Fired when layers are changed      |
+| `orientationchange` | Fired when orientation changes     |
+| `collapse`          | Fired when panel collapses         |
+| `expand`            | Fired when panel expands           |
+| `activate`          | Fired when swipe tool is activated |
+| `deactivate`        | Fired when swipe tool is deactivated |
+| `statechange`       | Fired on any state change          |
 
 ### SwipeControlReact
 
@@ -163,12 +169,14 @@ React wrapper component for SwipeControl.
 
 All `SwipeControlOptions` plus:
 
-| Prop            | Type                                        | Description                      |
-| --------------- | ------------------------------------------- | -------------------------------- |
-| `map`           | `Map`                                       | MapLibre map instance (required) |
-| `onSlide`       | `(position: number) => void`                | Callback for position changes    |
-| `onLayerChange` | `(left: string[], right: string[]) => void` | Callback for layer changes       |
-| `onStateChange` | `(state: SwipeState) => void`               | Callback for state changes       |
+| Prop             | Type                                        | Description                        |
+| ---------------- | ------------------------------------------- | ---------------------------------- |
+| `map`            | `Map`                                       | MapLibre map instance (required)   |
+| `active`         | `boolean`                                   | Whether the swipe tool is active   |
+| `onSlide`        | `(position: number) => void`                | Callback for position changes      |
+| `onLayerChange`  | `(left: string[], right: string[]) => void` | Callback for layer changes         |
+| `onStateChange`  | `(state: SwipeState) => void`               | Callback for state changes         |
+| `onActiveChange` | `(active: boolean) => void`                 | Callback for active state changes  |
 
 ### useSwipeState
 
@@ -183,6 +191,7 @@ const {
   setLeftLayers,
   setRightLayers,
   setCollapsed,
+  setActive,
   toggle,
   reset,
   addLeftLayer,
