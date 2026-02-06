@@ -26,6 +26,7 @@ const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className'>> & {
   panelWidth: 280,
   className: '',
   mousemove: false,
+  active: true,
 };
 
 /**
@@ -67,6 +68,8 @@ export class SwipeControl implements IControl {
   private _state: SwipeState;
   private _eventHandlers: EventHandlersMap = new globalThis.Map();
   private _bounds?: DOMRect;
+  private _rafHandle: number | null = null;
+  private _rafPendingPosition: number | null = null;
 
   // Event handler references for cleanup
   private _resizeHandler: (() => void) | null = null;
@@ -95,6 +98,7 @@ export class SwipeControl implements IControl {
       leftLayers: [...this._options.leftLayers],
       rightLayers: [...this._options.rightLayers],
       isDragging: false,
+      active: this._options.active,
     };
   }
 
@@ -134,6 +138,12 @@ export class SwipeControl implements IControl {
     this._updateClip();
     this._updateLayerVisibility();
 
+    // Apply initial active state
+    if (!this._state.active) {
+      if (this._slider) this._slider.style.display = 'none';
+      if (this._clipContainer) this._clipContainer.style.display = 'none';
+    }
+
     // Initial panel state
     if (this._panel && !this._state.collapsed) {
       this._panel.classList.add('expanded');
@@ -152,6 +162,11 @@ export class SwipeControl implements IControl {
   onRemove(): void {
     // Remove event listeners
     this._removeEventListeners();
+    if (this._rafHandle !== null) {
+      cancelAnimationFrame(this._rafHandle);
+      this._rafHandle = null;
+    }
+    this._rafPendingPosition = null;
 
     // Remove comparison map
     if (this._comparisonMap) {
@@ -340,6 +355,43 @@ export class SwipeControl implements IControl {
   }
 
   /**
+   * Sets whether the swipe tool is active.
+   * When inactive, the slider and comparison map are hidden and drag is disabled.
+   *
+   * @param active - Whether the swipe tool should be active
+   */
+  setActive(active: boolean): void {
+    if (active === this._state.active) return;
+
+    this._state.active = active;
+
+    if (active) {
+      // Show slider and clip container
+      if (this._slider) this._slider.style.display = '';
+      if (this._clipContainer) this._clipContainer.style.display = '';
+      this._updateClip();
+      this._emit('activate');
+    } else {
+      // Hide slider and clip container, remove clip-path
+      if (this._slider) this._slider.style.display = 'none';
+      if (this._clipContainer) this._clipContainer.style.display = 'none';
+      this._emit('deactivate');
+    }
+
+    this._updateActiveToggle();
+    this._emit('statechange');
+  }
+
+  /**
+   * Gets whether the swipe tool is currently active.
+   *
+   * @returns Whether the swipe tool is active
+   */
+  isActive(): boolean {
+    return this._state.active;
+  }
+
+  /**
    * Gets the map instance.
    *
    * @returns The MapLibre GL map instance or undefined if not added to a map
@@ -519,14 +571,81 @@ export class SwipeControl implements IControl {
   private _updateClip(): void {
     if (!this._clipContainer || !this._bounds) return;
 
-    const position = this._state.position;
+    const snapped = this._getSnappedPosition();
+    if (snapped === null) return;
+    const width = this._bounds.width;
+    const height = this._bounds.height;
+
+    // Clear any legacy clip-path styles for stability.
+    this._clipContainer.style.clipPath = '';
+    (this._clipContainer.style as CSSStyleDeclaration & {
+      webkitClipPath?: string;
+    }).webkitClipPath = '';
 
     if (this._state.orientation === 'vertical') {
-      // Clip to show only the right portion (from slider to right edge)
-      this._clipContainer.style.clipPath = `inset(0 0 0 ${position}%)`;
+      const left = Math.max(0, Math.min(width, snapped));
+      const visibleWidth = Math.max(0, width - left);
+      this._clipContainer.style.left = `${left}px`;
+      this._clipContainer.style.top = '0px';
+      this._clipContainer.style.width = `${visibleWidth}px`;
+      this._clipContainer.style.height = `${height}px`;
+      if (this._comparisonContainer) {
+        this._comparisonContainer.style.left = `${-left}px`;
+        this._comparisonContainer.style.top = '0px';
+        this._comparisonContainer.style.width = `${width}px`;
+        this._comparisonContainer.style.height = `${height}px`;
+      }
     } else {
-      // Clip to show only the bottom portion (from slider to bottom edge)
-      this._clipContainer.style.clipPath = `inset(${position}% 0 0 0)`;
+      const top = Math.max(0, Math.min(height, snapped));
+      const visibleHeight = Math.max(0, height - top);
+      this._clipContainer.style.left = '0px';
+      this._clipContainer.style.top = `${top}px`;
+      this._clipContainer.style.width = `${width}px`;
+      this._clipContainer.style.height = `${visibleHeight}px`;
+      if (this._comparisonContainer) {
+        this._comparisonContainer.style.left = '0px';
+        this._comparisonContainer.style.top = `${-top}px`;
+        this._comparisonContainer.style.width = `${width}px`;
+        this._comparisonContainer.style.height = `${height}px`;
+      }
+    }
+  }
+
+  private _getSnappedPosition(): number | null {
+    if (!this._bounds) return null;
+    const ratio =
+      typeof window !== 'undefined' && window.devicePixelRatio
+        ? window.devicePixelRatio
+        : 1;
+    const axis =
+      this._state.orientation === 'vertical'
+        ? this._bounds.width
+        : this._bounds.height;
+    const positionPx = (this._state.position / 100) * axis;
+    return Math.round(positionPx * ratio) / ratio;
+  }
+
+  private _queuePositionUpdate(position: number): void {
+    this._rafPendingPosition = position;
+    if (this._rafHandle !== null) return;
+    this._rafHandle = window.requestAnimationFrame(() => {
+      this._rafHandle = null;
+      if (this._rafPendingPosition === null) return;
+      const pending = this._rafPendingPosition;
+      this._rafPendingPosition = null;
+      this.setPosition(pending);
+    });
+  }
+
+  private _flushPositionUpdate(): void {
+    if (this._rafHandle !== null) {
+      cancelAnimationFrame(this._rafHandle);
+      this._rafHandle = null;
+    }
+    if (this._rafPendingPosition !== null) {
+      const pending = this._rafPendingPosition;
+      this._rafPendingPosition = null;
+      this.setPosition(pending);
     }
   }
 
@@ -624,6 +743,15 @@ export class SwipeControl implements IControl {
     // Content
     const content = document.createElement('div');
     content.className = 'swipe-control-content';
+
+    // Active toggle switch
+    const toggleGroup = this._createActiveToggle();
+    content.appendChild(toggleGroup);
+
+    // Divider after toggle
+    const toggleDivider = document.createElement('div');
+    toggleDivider.className = 'swipe-control-divider';
+    content.appendChild(toggleDivider);
 
     // Orientation selector
     const orientationGroup = this._createOrientationSelector();
@@ -799,6 +927,62 @@ export class SwipeControl implements IControl {
   }
 
   /**
+   * Creates the active toggle switch element.
+   *
+   * @returns The toggle switch container element
+   */
+  private _createActiveToggle(): HTMLElement {
+    const group = document.createElement('div');
+    group.className = 'swipe-control-group swipe-toggle-group';
+
+    const row = document.createElement('div');
+    row.className = 'swipe-toggle-switch';
+    row.dataset.activeToggle = 'true';
+
+    const label = document.createElement('label');
+    label.className = 'swipe-toggle-label';
+    label.textContent = 'Swipe Enabled';
+    label.htmlFor = 'swipe-active-toggle';
+
+    const switchContainer = document.createElement('label');
+    switchContainer.className = 'swipe-toggle-slider';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = 'swipe-active-toggle';
+    checkbox.checked = this._state.active;
+    checkbox.addEventListener('change', () => {
+      this.setActive(checkbox.checked);
+    });
+
+    const slider = document.createElement('span');
+    slider.className = 'swipe-toggle-track';
+
+    switchContainer.appendChild(checkbox);
+    switchContainer.appendChild(slider);
+
+    row.appendChild(label);
+    row.appendChild(switchContainer);
+    group.appendChild(row);
+
+    return group;
+  }
+
+  /**
+   * Syncs the active toggle checkbox in the panel with the current state.
+   */
+  private _updateActiveToggle(): void {
+    if (!this._panel) return;
+
+    const checkbox = this._panel.querySelector<HTMLInputElement>(
+      '#swipe-active-toggle'
+    );
+    if (checkbox) {
+      checkbox.checked = this._state.active;
+    }
+  }
+
+  /**
    * Setup event listeners for slider and panel.
    */
   private _setupEventListeners(): void {
@@ -947,6 +1131,7 @@ export class SwipeControl implements IControl {
    * @param e - The mouse or touch event
    */
   private _onDragStart(e: MouseEvent | TouchEvent): void {
+    if (!this._state.active) return;
     e.preventDefault();
     this._state.isDragging = true;
     this._slider?.classList.add('dragging');
@@ -979,13 +1164,14 @@ export class SwipeControl implements IControl {
       position = ((clientY - this._bounds.top) / this._bounds.height) * 100;
     }
 
-    this.setPosition(position);
+    this._queuePositionUpdate(position);
   }
 
   /**
    * Handles the end of a drag operation.
    */
   private _onDragEnd(): void {
+    this._flushPositionUpdate();
     this._state.isDragging = false;
     this._slider?.classList.remove('dragging');
     this._emit('slideend');
@@ -1008,7 +1194,7 @@ export class SwipeControl implements IControl {
    * @param e - The mouse event
    */
   private _onMouseMove(e: MouseEvent): void {
-    if (this._state.isDragging || !this._bounds) return;
+    if (!this._state.active || this._state.isDragging || !this._bounds) return;
 
     let position: number;
     if (this._state.orientation === 'vertical') {
@@ -1017,7 +1203,7 @@ export class SwipeControl implements IControl {
       position = ((e.clientY - this._bounds.top) / this._bounds.height) * 100;
     }
 
-    this.setPosition(position);
+    this._queuePositionUpdate(position);
   }
 
   /**
@@ -1033,18 +1219,17 @@ export class SwipeControl implements IControl {
    * Updates the slider position based on the current state.
    */
   private _updateSliderPosition(): void {
-    if (!this._slider || !this._bounds) return;
+    if (!this._slider) return;
 
+    const snapped = this._getSnappedPosition();
     if (this._state.orientation === 'vertical') {
-      const x = (this._state.position / 100) * this._bounds.width;
-      this._slider.style.left = `${x}px`;
-      this._slider.style.top = '0';
-      this._slider.style.transform = 'translateX(-50%)';
+      this._slider.style.left =
+        snapped !== null ? `${snapped}px` : `${this._state.position}%`;
+      // top is set via CSS class, don't override inline
     } else {
-      const y = (this._state.position / 100) * this._bounds.height;
-      this._slider.style.top = `${y}px`;
-      this._slider.style.left = '0';
-      this._slider.style.transform = 'translateY(-50%)';
+      this._slider.style.top =
+        snapped !== null ? `${snapped}px` : `${this._state.position}%`;
+      // left is set via CSS class, don't override inline
     }
   }
 
@@ -1054,6 +1239,12 @@ export class SwipeControl implements IControl {
   private _updateSliderOrientation(): void {
     if (!this._slider) return;
     this._slider.className = `swipe-slider swipe-slider-${this._state.orientation}`;
+    // Clear inline styles from previous orientation before applying new position
+    if (this._state.orientation === 'vertical') {
+      this._slider.style.top = '';
+    } else {
+      this._slider.style.left = '';
+    }
     this._updateSliderPosition();
   }
 
