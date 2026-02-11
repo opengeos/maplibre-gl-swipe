@@ -81,6 +81,7 @@ export class SwipeControl implements IControl {
   private _mouseMoveHandler: ((e: MouseEvent) => void) | null = null;
   private _syncMoveHandler: (() => void) | null = null;
   private _syncMoveEndHandler: (() => void) | null = null;
+  private _styleDataHandler: (() => void) | null = null;
   private _isSyncing: boolean = false;
 
   /**
@@ -915,6 +916,78 @@ export class SwipeControl implements IControl {
   }
 
   /**
+   * Refreshes the layer list in the panel when map layers change.
+   * Called when styledata events fire to detect new/removed layers.
+   */
+  private _refreshLayerList(): void {
+    if (!this._panel) return;
+
+    const currentLayers = this.getLayers();
+    const currentLayerIds = new Set(currentLayers.map((l) => l.id));
+
+    // Update both left and right layer lists
+    (['left', 'right'] as const).forEach((side) => {
+      const layerList = this._panel!.querySelector<HTMLElement>(
+        `[data-layer-list="${side}"]`
+      );
+      if (!layerList) return;
+
+      const selectedLayers =
+        side === 'left' ? this._state.leftLayers : this._state.rightLayers;
+
+      // Get existing layer IDs in the UI
+      const existingCheckboxes = layerList.querySelectorAll<HTMLInputElement>(
+        'input[type="checkbox"][data-layer-id]'
+      );
+      const existingLayerIds = new Set<string>();
+      existingCheckboxes.forEach((cb) => {
+        if (cb.dataset.layerId) {
+          existingLayerIds.add(cb.dataset.layerId);
+        }
+      });
+
+      // Remove checkboxes for layers that no longer exist
+      existingCheckboxes.forEach((cb) => {
+        const layerId = cb.dataset.layerId;
+        if (layerId && !currentLayerIds.has(layerId)) {
+          const item = cb.closest('.swipe-layer-item');
+          if (item) item.remove();
+          // Also remove from selected layers state
+          const idx = selectedLayers.indexOf(layerId);
+          if (idx > -1) selectedLayers.splice(idx, 1);
+        }
+      });
+
+      // Add checkboxes for new layers
+      currentLayers.forEach((layer) => {
+        if (!existingLayerIds.has(layer.id)) {
+          const item = document.createElement('div');
+          item.className = 'swipe-layer-item';
+
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.id = `swipe-${side}-${layer.id}`;
+          checkbox.dataset.layerId = layer.id;
+          checkbox.dataset.side = side;
+          checkbox.checked = selectedLayers.includes(layer.id);
+          checkbox.addEventListener('change', () => {
+            this._handleLayerToggle(side, layer.id, checkbox.checked);
+          });
+
+          const itemLabel = document.createElement('label');
+          itemLabel.htmlFor = checkbox.id;
+          itemLabel.textContent = layer.id;
+          itemLabel.title = `Type: ${layer.type}, Source: ${layer.source}`;
+
+          item.appendChild(checkbox);
+          item.appendChild(itemLabel);
+          layerList.appendChild(item);
+        }
+      });
+    });
+  }
+
+  /**
    * Updates the orientation select to reflect current state.
    */
   private _updateOrientationSelect(): void {
@@ -1042,6 +1115,12 @@ export class SwipeControl implements IControl {
     // Sync comparison map with main map
     this._setupMapSync();
 
+    // Listen for layer changes to refresh the layer list
+    this._styleDataHandler = () => {
+      this._refreshLayerList();
+    };
+    this._map?.on('styledata', this._styleDataHandler);
+
     // Mousemove option
     if (this._options.mousemove && this._mapContainer) {
       this._mouseMoveHandler = this._onMouseMove.bind(this);
@@ -1107,6 +1186,10 @@ export class SwipeControl implements IControl {
     if (this._syncMoveEndHandler && this._map) {
       this._map.off('moveend', this._syncMoveEndHandler);
       this._syncMoveEndHandler = null;
+    }
+    if (this._styleDataHandler && this._map) {
+      this._map.off('styledata', this._styleDataHandler);
+      this._styleDataHandler = null;
     }
     if (this._moveHandler) {
       document.removeEventListener('mousemove', this._moveHandler);
