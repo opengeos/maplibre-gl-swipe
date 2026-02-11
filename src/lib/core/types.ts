@@ -60,6 +60,13 @@ export interface SwipeControlOptions {
   panelWidth?: number;
 
   /**
+   * Maximum height of the control panel in pixels.
+   * When content exceeds this height, a vertical scrollbar appears.
+   * @default 500
+   */
+  maxHeight?: number;
+
+  /**
    * Custom CSS class name for the control container
    */
   className?: string;
