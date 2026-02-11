@@ -24,6 +24,7 @@ const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className'>> & {
   collapsed: true,
   title: 'Layer Swipe',
   panelWidth: 280,
+  maxHeight: 500,
   className: '',
   mousemove: false,
   active: true,
@@ -721,6 +722,7 @@ export class SwipeControl implements IControl {
     const panel = document.createElement('div');
     panel.className = 'swipe-control-panel';
     panel.style.width = `${this._options.panelWidth}px`;
+    panel.style.maxHeight = `${this._options.maxHeight}px`;
 
     // Header
     const header = document.createElement('div');
