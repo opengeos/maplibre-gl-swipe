@@ -1322,4 +1322,8 @@ export class SwipeControl implements IControl {
         break;
     }
   }
+
+  getPanelElement(): HTMLElement | null {
+    return this._panel ?? null;
+  }
 }
