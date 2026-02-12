@@ -89,6 +89,13 @@ export interface SwipeControlOptions {
    * being listed individually.
    */
   basemapStyle?: string;
+
+  /**
+   * Layer ID patterns to exclude from the layer list.
+   * Supports glob-style wildcards (e.g., 'measure-*', 'gl-draw-*').
+   * @default []
+   */
+  excludeLayers?: string[];
 }
 
 /**

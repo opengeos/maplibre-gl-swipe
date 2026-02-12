@@ -13,9 +13,10 @@ import type {
 /**
  * Default options for the SwipeControl
  */
-const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className' | 'basemapStyle'>> & {
+const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className' | 'basemapStyle' | 'excludeLayers'>> & {
   className: string;
   basemapStyle: string | undefined;
+  excludeLayers: string[];
 } = {
   orientation: 'vertical',
   position: 50,
@@ -30,6 +31,7 @@ const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className' | 'basemap
   mousemove: false,
   active: true,
   basemapStyle: undefined,
+  excludeLayers: [],
 };
 
 /**
@@ -65,9 +67,10 @@ export class SwipeControl implements IControl {
   private _sliderHandle?: HTMLElement;
   private _clipContainer?: HTMLElement;
   private _comparisonContainer?: HTMLElement;
-  private _options: Required<Omit<SwipeControlOptions, 'className' | 'basemapStyle'>> & {
+  private _options: Required<Omit<SwipeControlOptions, 'className' | 'basemapStyle' | 'excludeLayers'>> & {
     className: string;
     basemapStyle: string | undefined;
+    excludeLayers: string[];
   };
   private _state: SwipeState;
   private _basemapLayerIds: Set<string> = new Set();
@@ -95,8 +98,8 @@ export class SwipeControl implements IControl {
    */
   constructor(options?: Partial<SwipeControlOptions>) {
     this._options = { ...DEFAULT_OPTIONS, ...options } as Required<
-      Omit<SwipeControlOptions, 'className' | 'basemapStyle'>
-    > & { className: string; basemapStyle: string | undefined };
+      Omit<SwipeControlOptions, 'className' | 'basemapStyle' | 'excludeLayers'>
+    > & { className: string; basemapStyle: string | undefined; excludeLayers: string[] };
     this._state = {
       collapsed: this._options.collapsed,
       position: this._options.position,
@@ -318,6 +321,27 @@ export class SwipeControl implements IControl {
    *
    * @returns Array of layer information
    */
+  /**
+   * Checks if a layer ID matches any of the exclude patterns.
+   * Supports glob-style wildcards (* matches any characters).
+   *
+   * @param layerId - The layer ID to check
+   * @returns Whether the layer should be excluded
+   */
+  private _isLayerExcluded(layerId: string): boolean {
+    for (const pattern of this._options.excludeLayers) {
+      // Convert glob pattern to regex
+      const regexPattern = pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special regex chars except *
+        .replace(/\*/g, '.*'); // Convert * to .*
+      const regex = new RegExp(`^${regexPattern}$`);
+      if (regex.test(layerId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   getLayers(): LayerInfo[] {
     if (!this._map) return [];
 
@@ -328,6 +352,11 @@ export class SwipeControl implements IControl {
     let hasBasemap = false;
 
     for (const layer of style.layers) {
+      // Check if this layer should be excluded
+      if (this._isLayerExcluded(layer.id)) {
+        continue;
+      }
+
       // Check if this layer belongs to the basemap
       if (this._basemapLayerIds.has(layer.id)) {
         // Add a single "Basemap" entry for all basemap layers
