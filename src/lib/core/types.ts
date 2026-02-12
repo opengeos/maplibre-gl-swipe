@@ -82,6 +82,13 @@ export interface SwipeControlOptions {
    * @default true
    */
   active?: boolean;
+
+  /**
+   * URL of the basemap style JSON. When provided, all layers from this style
+   * will be grouped as a single "Basemap" entry in the layer list instead of
+   * being listed individually.
+   */
+  basemapStyle?: string;
 }
 
 /**
