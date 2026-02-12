@@ -58,6 +58,7 @@ map.on('load', () => {
   });
 
   // Create swipe control with satellite on left, OSM on right
+  // Use basemapStyle to group all demotiles basemap layers as a single entry
   const swipe = new SwipeControl({
     orientation: 'vertical',
     position: 50,
@@ -68,6 +69,7 @@ map.on('load', () => {
     title: 'Layer Comparison',
     panelWidth: 280,
     active: false,
+    basemapStyle: 'https://demotiles.maplibre.org/style.json',
   });
 
   // Add control to the map

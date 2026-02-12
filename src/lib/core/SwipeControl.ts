@@ -13,8 +13,9 @@ import type {
 /**
  * Default options for the SwipeControl
  */
-const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className'>> & {
+const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className' | 'basemapStyle'>> & {
   className: string;
+  basemapStyle: string | undefined;
 } = {
   orientation: 'vertical',
   position: 50,
@@ -28,6 +29,7 @@ const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className'>> & {
   className: '',
   mousemove: false,
   active: true,
+  basemapStyle: undefined,
 };
 
 /**
@@ -63,10 +65,12 @@ export class SwipeControl implements IControl {
   private _sliderHandle?: HTMLElement;
   private _clipContainer?: HTMLElement;
   private _comparisonContainer?: HTMLElement;
-  private _options: Required<Omit<SwipeControlOptions, 'className'>> & {
+  private _options: Required<Omit<SwipeControlOptions, 'className' | 'basemapStyle'>> & {
     className: string;
+    basemapStyle: string | undefined;
   };
   private _state: SwipeState;
+  private _basemapLayerIds: Set<string> = new Set();
   private _eventHandlers: EventHandlersMap = new globalThis.Map();
   private _bounds?: DOMRect;
   private _rafHandle: number | null = null;
@@ -90,8 +94,8 @@ export class SwipeControl implements IControl {
    */
   constructor(options?: Partial<SwipeControlOptions>) {
     this._options = { ...DEFAULT_OPTIONS, ...options } as Required<
-      Omit<SwipeControlOptions, 'className'>
-    > & { className: string };
+      Omit<SwipeControlOptions, 'className' | 'basemapStyle'>
+    > & { className: string; basemapStyle: string | undefined };
     this._state = {
       collapsed: this._options.collapsed,
       position: this._options.position,
@@ -124,7 +128,21 @@ export class SwipeControl implements IControl {
     this._container = this._createContainer();
     this._slider = this._createSlider();
 
-    if (this._options.showPanel) {
+    // Load basemap style if provided, then create panel
+    if (this._options.basemapStyle) {
+      this._loadBasemapStyle(this._options.basemapStyle).then(() => {
+        if (this._options.showPanel && this._mapContainer) {
+          this._panel = this._createPanel();
+          this._mapContainer.appendChild(this._panel);
+          if (!this._state.collapsed) {
+            this._panel.classList.add('expanded');
+            requestAnimationFrame(() => {
+              this._updatePanelPosition();
+            });
+          }
+        }
+      });
+    } else if (this._options.showPanel) {
       this._panel = this._createPanel();
       this._mapContainer.appendChild(this._panel);
     }
@@ -145,8 +163,8 @@ export class SwipeControl implements IControl {
       if (this._clipContainer) this._clipContainer.style.display = 'none';
     }
 
-    // Initial panel state
-    if (this._panel && !this._state.collapsed) {
+    // Initial panel state (only if basemapStyle not provided, otherwise handled above)
+    if (!this._options.basemapStyle && this._panel && !this._state.collapsed) {
       this._panel.classList.add('expanded');
       requestAnimationFrame(() => {
         this._updatePanelPosition();
@@ -271,7 +289,31 @@ export class SwipeControl implements IControl {
   }
 
   /**
+   * Loads the basemap style JSON and extracts layer IDs.
+   *
+   * @param styleUrl - The URL of the basemap style JSON
+   */
+  private async _loadBasemapStyle(styleUrl: string): Promise<void> {
+    try {
+      const response = await fetch(styleUrl);
+      if (!response.ok) {
+        console.warn(`Failed to load basemap style from ${styleUrl}`);
+        return;
+      }
+      const style = await response.json();
+      if (style.layers && Array.isArray(style.layers)) {
+        this._basemapLayerIds = new Set(
+          style.layers.map((layer: { id: string }) => layer.id)
+        );
+      }
+    } catch (error) {
+      console.warn(`Error loading basemap style: ${error}`);
+    }
+  }
+
+  /**
    * Gets information about all layers in the map.
+   * When basemapStyle is provided, basemap layers are grouped as a single "Basemap" entry.
    *
    * @returns Array of layer information
    */
@@ -281,12 +323,49 @@ export class SwipeControl implements IControl {
     const style = this._map.getStyle();
     if (!style || !style.layers) return [];
 
-    return style.layers.map((layer) => ({
-      id: layer.id,
-      type: layer.type,
-      source: (layer as { source?: string }).source || '',
-      visible: this._map!.getLayoutProperty(layer.id, 'visibility') !== 'none',
-    }));
+    const layers: LayerInfo[] = [];
+    let hasBasemap = false;
+
+    for (const layer of style.layers) {
+      // Check if this layer belongs to the basemap
+      if (this._basemapLayerIds.has(layer.id)) {
+        // Add a single "Basemap" entry for all basemap layers
+        if (!hasBasemap) {
+          hasBasemap = true;
+          layers.push({
+            id: '__basemap__',
+            type: 'basemap',
+            source: '',
+            visible: true,
+          });
+        }
+        // Skip adding individual basemap layers
+        continue;
+      }
+
+      layers.push({
+        id: layer.id,
+        type: layer.type,
+        source: (layer as { source?: string }).source || '',
+        visible: this._map!.getLayoutProperty(layer.id, 'visibility') !== 'none',
+      });
+    }
+
+    return layers;
+  }
+
+  /**
+   * Gets the actual layer IDs for a given layer ID.
+   * If the layer ID is '__basemap__', returns all basemap layer IDs.
+   *
+   * @param layerId - The layer ID
+   * @returns Array of actual layer IDs
+   */
+  private _getActualLayerIds(layerId: string): string[] {
+    if (layerId === '__basemap__') {
+      return Array.from(this._basemapLayerIds);
+    }
+    return [layerId];
   }
 
   /**
@@ -479,10 +558,16 @@ export class SwipeControl implements IControl {
     const bearing = this._map.getBearing();
     const pitch = this._map.getPitch();
 
+    // Only create comparison map if there's a valid style
+    if (!currentStyle) {
+      console.warn('SwipeControl: No map style found, comparison map not created');
+      return;
+    }
+
     // Create comparison map with the same style
     const mapOptions: MapOptions = {
       container: this._comparisonContainer,
-      style: currentStyle || 'https://demotiles.maplibre.org/style.json',
+      style: currentStyle,
       center: center,
       zoom: zoom,
       bearing: bearing,
@@ -507,12 +592,25 @@ export class SwipeControl implements IControl {
   private _updateLayerVisibility(): void {
     if (!this._map) return;
 
-    const allLayers = this.getLayers();
-    const leftSet = new Set(this._state.leftLayers);
-    const rightSet = new Set(this._state.rightLayers);
+    // Expand __basemap__ to actual layer IDs
+    const expandLayers = (layerIds: string[]): Set<string> => {
+      const expanded = new Set<string>();
+      for (const id of layerIds) {
+        for (const actualId of this._getActualLayerIds(id)) {
+          expanded.add(actualId);
+        }
+      }
+      return expanded;
+    };
+
+    const leftSet = expandLayers(this._state.leftLayers);
+    const rightSet = expandLayers(this._state.rightLayers);
+
+    const style = this._map.getStyle();
+    if (!style || !style.layers) return;
 
     // Update main map: show left layers, hide right-only layers
-    allLayers.forEach((layer) => {
+    style.layers.forEach((layer) => {
       const isLeft = leftSet.has(layer.id);
       const isRight = rightSet.has(layer.id);
 
@@ -853,8 +951,11 @@ export class SwipeControl implements IControl {
 
       const itemLabel = document.createElement('label');
       itemLabel.htmlFor = checkbox.id;
-      itemLabel.textContent = layer.id;
-      itemLabel.title = `Type: ${layer.type}, Source: ${layer.source}`;
+      // Display "Basemap" for the grouped basemap layer
+      itemLabel.textContent = layer.id === '__basemap__' ? 'Basemap' : layer.id;
+      itemLabel.title = layer.id === '__basemap__'
+        ? 'All basemap layers grouped together'
+        : `Type: ${layer.type}, Source: ${layer.source}`;
 
       item.appendChild(checkbox);
       item.appendChild(itemLabel);
