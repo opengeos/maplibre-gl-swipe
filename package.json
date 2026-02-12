@@ -1,6 +1,6 @@
 {
   "name": "maplibre-gl-swipe",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "A MapLibre GL plugin for swiping layers to compare them side by side",
   "type": "module",
   "main": "./dist/index.cjs",
