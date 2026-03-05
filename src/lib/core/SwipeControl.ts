@@ -74,6 +74,7 @@ export class SwipeControl implements IControl {
   };
   private _state: SwipeState;
   private _basemapLayerIds: Set<string> = new Set();
+  private _originalVisibility: globalThis.Map<string, string> = new globalThis.Map();
   private _eventHandlers: EventHandlersMap = new globalThis.Map();
   private _bounds?: DOMRect;
   private _rafHandle: number | null = null;
@@ -125,8 +126,21 @@ export class SwipeControl implements IControl {
     // Get initial bounds first (needed for slider positioning)
     this._updateBounds();
 
-    // Create the comparison map overlay
-    this._createComparisonMap();
+    // Create the comparison map overlay (deferred if style not yet loaded)
+    if (this._map.isStyleLoaded()) {
+      this._createComparisonMap();
+    } else {
+      this._map.once('styledata', () => {
+        this._createComparisonMap();
+        this._setupMapSync();
+        this._updateClip();
+        this._updateLayerVisibility();
+        // Apply active state to newly created containers
+        if (!this._state.active) {
+          if (this._clipContainer) this._clipContainer.style.display = 'none';
+        }
+      });
+    }
 
     // Create UI elements
     this._container = this._createContainer();
@@ -479,7 +493,12 @@ export class SwipeControl implements IControl {
       // Show slider and clip container
       if (this._slider) this._slider.style.display = '';
       if (this._clipContainer) this._clipContainer.style.display = '';
+      // Resize comparison map after container becomes visible again
+      if (this._comparisonMap) {
+        this._comparisonMap.resize();
+      }
       this._updateClip();
+      this._updateLayerVisibility();
       this._emit('activate');
     } else {
       // Hide slider and clip container, remove clip-path
@@ -639,32 +658,50 @@ export class SwipeControl implements IControl {
     const style = this._map.getStyle();
     if (!style || !style.layers) return;
 
-    // Update main map: show left layers, hide right-only layers
+    // Update main map: show left layers, hide right-only layers,
+    // restore original visibility for layers not in either list
     style.layers.forEach((layer) => {
       const isLeft = leftSet.has(layer.id);
       const isRight = rightSet.has(layer.id);
 
       try {
-        if (isLeft) {
-          // Show on main map
-          this._map!.setLayoutProperty(layer.id, 'visibility', 'visible');
-        } else if (isRight && !isLeft) {
-          // Hide on main map (shown on comparison map instead)
-          this._map!.setLayoutProperty(layer.id, 'visibility', 'none');
+        if (isLeft || isRight) {
+          // Save original visibility before we modify it
+          if (!this._originalVisibility.has(layer.id)) {
+            const vis = this._map!.getLayoutProperty(layer.id, 'visibility');
+            this._originalVisibility.set(layer.id, vis ?? 'visible');
+          }
+
+          if (isRight && !isLeft) {
+            // Hide on main map (shown on comparison map instead)
+            this._map!.setLayoutProperty(layer.id, 'visibility', 'none');
+          } else {
+            // Show on main map (selected for left or both)
+            this._map!.setLayoutProperty(layer.id, 'visibility', 'visible');
+          }
+        } else if (this._originalVisibility.has(layer.id)) {
+          // Restore original visibility for layers no longer in either set
+          this._map!.setLayoutProperty(
+            layer.id,
+            'visibility',
+            this._originalVisibility.get(layer.id)!
+          );
+          this._originalVisibility.delete(layer.id);
         }
-        // Layers not in either list keep their original visibility
       } catch {
         // Layer may not exist
       }
     });
 
-    // Update comparison map: show right layers, hide left-only layers
+    // Update comparison map: show right layers, hide everything else
     if (this._comparisonMap && this._comparisonMap.isStyleLoaded()) {
       try {
+        // Sync any layers from the main map that don't exist on the comparison map
+        this._syncLayersToComparisonMap(rightSet);
+
         const compStyle = this._comparisonMap.getStyle();
         if (compStyle && compStyle.layers) {
           compStyle.layers.forEach((layer) => {
-            const isLeft = leftSet.has(layer.id);
             const isRight = rightSet.has(layer.id);
 
             try {
@@ -675,8 +712,8 @@ export class SwipeControl implements IControl {
                   'visibility',
                   'visible'
                 );
-              } else if (isLeft && !isRight) {
-                // Hide on comparison map (shown on main map instead)
+              } else {
+                // Hide on comparison map (shown on main map or not selected)
                 this._comparisonMap!.setLayoutProperty(
                   layer.id,
                   'visibility',
@@ -690,6 +727,60 @@ export class SwipeControl implements IControl {
         }
       } catch {
         // Style may not be loaded yet
+      }
+    }
+  }
+
+  /**
+   * Syncs layers from the main map to the comparison map.
+   * Copies sources and layers that exist on the main map but not on the comparison map.
+   *
+   * @param rightSet - Set of layer IDs selected for the right side
+   */
+  private _syncLayersToComparisonMap(rightSet: Set<string>): void {
+    if (!this._map || !this._comparisonMap) return;
+
+    const mainStyle = this._map.getStyle();
+    if (!mainStyle || !mainStyle.layers) return;
+
+    const compStyle = this._comparisonMap.getStyle();
+    const existingCompLayerIds = new Set(
+      compStyle?.layers?.map((l) => l.id) || []
+    );
+
+    for (const layer of mainStyle.layers) {
+      if (!rightSet.has(layer.id)) continue;
+      if (existingCompLayerIds.has(layer.id)) continue;
+
+      // Copy the source if it doesn't exist on the comparison map
+      const sourceId = (layer as { source?: string }).source;
+      if (sourceId) {
+        try {
+          const existingSource = this._comparisonMap.getSource(sourceId);
+          if (!existingSource) {
+            const mainSource = this._map.getSource(sourceId);
+            if (mainSource) {
+              // Serialize the source spec from the main map style
+              const sourceSpec = mainStyle.sources?.[sourceId];
+              if (sourceSpec) {
+                this._comparisonMap.addSource(sourceId, sourceSpec);
+              }
+            }
+          }
+        } catch {
+          // Source may already exist or fail to add
+        }
+      }
+
+      // Copy the layer to the comparison map
+      try {
+        // Get the full layer spec from the main map style
+        const layerSpec = mainStyle.layers.find((l) => l.id === layer.id);
+        if (layerSpec) {
+          this._comparisonMap.addLayer(layerSpec);
+        }
+      } catch {
+        // Layer may already exist or fail to add
       }
     }
   }
