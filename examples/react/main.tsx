@@ -43,6 +43,9 @@ function App() {
     // Add fullscreen control
     mapInstance.addControl(new maplibregl.FullscreenControl(), 'top-right');
 
+    // Add globe control
+    mapInstance.addControl(new maplibregl.GlobeControl(), 'top-right');
+
     mapInstance.on('load', () => {
       // Add a satellite raster layer
       mapInstance.addSource('satellite', {

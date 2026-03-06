@@ -17,6 +17,9 @@ map.addControl(new maplibregl.NavigationControl(), 'top-left');
 // Add fullscreen control
 map.addControl(new maplibregl.FullscreenControl(), 'top-left');
 
+// Add globe control
+map.addControl(new maplibregl.GlobeControl(), 'top-left');
+
 // Add swipe control and layers when map loads
 map.on('load', () => {
   // Add a satellite raster layer for comparison
