@@ -90,6 +90,7 @@ export class SwipeControl implements IControl {
   private _syncMoveHandler: (() => void) | null = null;
   private _syncMoveEndHandler: (() => void) | null = null;
   private _styleDataHandler: (() => void) | null = null;
+  private _projectionChangeHandler: (() => void) | null = null;
   private _isSyncing: boolean = false;
 
   /**
@@ -629,6 +630,10 @@ export class SwipeControl implements IControl {
 
     // Wait for comparison map to load before syncing
     this._comparisonMap.on('load', () => {
+      const projection = this._map?.getProjection();
+      if (projection) {
+        this._comparisonMap?.setProjection(projection);
+      }
       this._updateLayerVisibility();
       this._updateClip();
     });
@@ -1382,6 +1387,17 @@ export class SwipeControl implements IControl {
     // Sync on move events
     this._map.on('move', this._syncMoveHandler);
     this._map.on('moveend', this._syncMoveEndHandler);
+
+    // Sync projection changes
+    this._projectionChangeHandler = () => {
+      if (!this._comparisonMap || !this._map) return;
+      const mainProj = this._map.getProjection();
+      const compProj = this._comparisonMap.getProjection();
+      if (mainProj?.type !== compProj?.type) {
+        this._comparisonMap.setProjection(mainProj);
+      }
+    };
+    this._map.on('projectiontransition', this._projectionChangeHandler);
   }
 
   /**
@@ -1411,6 +1427,10 @@ export class SwipeControl implements IControl {
     if (this._styleDataHandler && this._map) {
       this._map.off('styledata', this._styleDataHandler);
       this._styleDataHandler = null;
+    }
+    if (this._projectionChangeHandler && this._map) {
+      this._map.off('projectiontransition', this._projectionChangeHandler);
+      this._projectionChangeHandler = null;
     }
     if (this._moveHandler) {
       document.removeEventListener('mousemove', this._moveHandler);
