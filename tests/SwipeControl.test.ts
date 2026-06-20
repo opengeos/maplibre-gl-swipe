@@ -38,6 +38,7 @@ vi.mock('maplibre-gl', () => ({
   },
 }));
 
+import maplibregl from 'maplibre-gl';
 import { SwipeControl } from '../src/lib/core/SwipeControl';
 
 describe('SwipeControl', () => {
@@ -75,6 +76,66 @@ describe('SwipeControl', () => {
       expect(state.collapsed).toBe(false);
       expect(state.leftLayers).toEqual(['layer1']);
       expect(state.rightLayers).toEqual(['layer2']);
+    });
+
+    it('should defer selectVisibleByDefault until the map is ready', () => {
+      const autoControl = new SwipeControl({ selectVisibleByDefault: true });
+      const state = autoControl.getState();
+      // The selection is applied in onAdd once the map is available, not in the
+      // constructor, so the initial state is still empty.
+      expect(state.leftLayers).toEqual([]);
+      expect(state.rightLayers).toEqual([]);
+    });
+  });
+
+  describe('selectVisibleByDefault', () => {
+    it('should pre-select all visible layers on both sides once ready', () => {
+      const autoControl = new SwipeControl({ selectVisibleByDefault: true });
+      const map = new maplibregl.Map();
+      // Simulate the map being attached, then run the deferred default-selection
+      // step the way onAdd does once the style/basemap are ready.
+      (autoControl as unknown as { _map: typeof map })._map = map;
+      const applied = (
+        autoControl as unknown as {
+          _applyDefaultSelectionIfPending: () => boolean;
+        }
+      )._applyDefaultSelectionIfPending();
+
+      expect(applied).toBe(true);
+      const state = autoControl.getState();
+      expect(state.leftLayers).toEqual(['layer1', 'layer2', 'layer3']);
+      expect(state.rightLayers).toEqual(['layer1', 'layer2', 'layer3']);
+    });
+
+    it('should not override an explicit layer selection', () => {
+      const autoControl = new SwipeControl({
+        selectVisibleByDefault: true,
+        leftLayers: ['layer1'],
+      });
+      const map = new maplibregl.Map();
+      (autoControl as unknown as { _map: typeof map })._map = map;
+      const applied = (
+        autoControl as unknown as {
+          _applyDefaultSelectionIfPending: () => boolean;
+        }
+      )._applyDefaultSelectionIfPending();
+
+      expect(applied).toBe(false);
+      expect(autoControl.getState().leftLayers).toEqual(['layer1']);
+    });
+
+    it('should leave selection empty when the option is off', () => {
+      const plainControl = new SwipeControl();
+      const map = new maplibregl.Map();
+      (plainControl as unknown as { _map: typeof map })._map = map;
+      const applied = (
+        plainControl as unknown as {
+          _applyDefaultSelectionIfPending: () => boolean;
+        }
+      )._applyDefaultSelectionIfPending();
+
+      expect(applied).toBe(false);
+      expect(plainControl.getState().leftLayers).toEqual([]);
     });
   });
 

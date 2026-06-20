@@ -125,6 +125,8 @@ The main control class that implements MapLibre's `IControl` interface.
 | `className`   | `string`                     | `''`            | Custom CSS class                |
 | `mousemove`   | `boolean`                    | `false`         | Slider follows mouse            |
 | `active`      | `boolean`                    | `true`          | Whether swipe starts active     |
+| `maxHeight`   | `number`                     | `500`           | Max panel height (px); the panel also shrinks to fit the available map height |
+| `selectVisibleByDefault` | `boolean`         | `false`         | Pre-select all visible layers on both sides when no `leftLayers`/`rightLayers` are given |
 
 #### Methods
 

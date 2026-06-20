@@ -96,6 +96,16 @@ export interface SwipeControlOptions {
    * @default []
    */
   excludeLayers?: string[];
+
+  /**
+   * When `true` and no explicit `leftLayers`/`rightLayers` are provided, the
+   * control pre-selects every currently visible (non-excluded) layer on both
+   * sides once the map and basemap are ready. This keeps the panel checkboxes
+   * in sync with what is rendered on launch and gives the user a populated
+   * baseline to compare from, instead of an empty checklist over a full map.
+   * @default false
+   */
+  selectVisibleByDefault?: boolean;
 }
 
 /**

@@ -253,7 +253,11 @@
    Layer List
    ============================================ */
 .swipe-layer-list {
-  max-height: 140px;
+  /* Let each list grow with its layers and rely on the panel's own scroll area
+     (.swipe-control-content) for overflow, so the panel uses the available
+     height instead of stacking two short, separately scrolling boxes. A cap
+     keeps a single very long list from crowding out the other side. */
+  max-height: 320px;
   overflow-y: auto;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
