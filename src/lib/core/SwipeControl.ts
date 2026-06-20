@@ -32,6 +32,7 @@ const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className' | 'basemap
   active: true,
   basemapStyle: undefined,
   excludeLayers: [],
+  selectVisibleByDefault: false,
 };
 
 /**
@@ -92,6 +93,8 @@ export class SwipeControl implements IControl {
   private _styleDataHandler: (() => void) | null = null;
   private _projectionChangeHandler: (() => void) | null = null;
   private _isSyncing: boolean = false;
+  private _pendingDefaultSelection: boolean = false;
+  private _basemapLoadSettled: boolean = false;
 
   /**
    * Creates a new SwipeControl instance.
@@ -111,6 +114,12 @@ export class SwipeControl implements IControl {
       isDragging: false,
       active: this._options.active,
     };
+    // Defer the "select all visible layers" default until the map (and basemap)
+    // are ready in onAdd; only when the caller did not pre-select any layers.
+    this._pendingDefaultSelection =
+      this._options.selectVisibleByDefault &&
+      this._state.leftLayers.length === 0 &&
+      this._state.rightLayers.length === 0;
   }
 
   /**
@@ -134,6 +143,7 @@ export class SwipeControl implements IControl {
       this._map.once('styledata', () => {
         this._createComparisonMap();
         this._setupMapSync();
+        this._applyDefaultSelectionIfPending();
         this._updateClip();
         this._updateLayerVisibility();
         // Apply active state to newly created containers
@@ -150,6 +160,10 @@ export class SwipeControl implements IControl {
     // Load basemap style if provided, then create panel
     if (this._options.basemapStyle) {
       this._loadBasemapStyle(this._options.basemapStyle).then(() => {
+        // Basemap layer IDs are now known, so the grouped "Basemap" entry is
+        // selectable — apply the default selection before building the panel so
+        // its checkboxes render in the correct state.
+        this._applyDefaultSelectionIfPending();
         if (this._options.showPanel && this._mapContainer) {
           this._panel = this._createPanel();
           this._mapContainer.appendChild(this._panel);
@@ -162,6 +176,7 @@ export class SwipeControl implements IControl {
         }
       });
     } else if (this._options.showPanel) {
+      this._applyDefaultSelectionIfPending();
       this._panel = this._createPanel();
       this._mapContainer.appendChild(this._panel);
     }
@@ -327,7 +342,48 @@ export class SwipeControl implements IControl {
       }
     } catch (error) {
       console.warn(`Error loading basemap style: ${error}`);
+    } finally {
+      // Mark the basemap load as settled (success or failure) so the default
+      // layer selection can proceed once grouping info is as complete as it
+      // will get.
+      this._basemapLoadSettled = true;
     }
+  }
+
+  /**
+   * Whether basemap grouping info is ready for the default selection.
+   * When a basemap style is configured we wait until it has loaded so the
+   * grouped "Basemap" entry is selected instead of its raw layer IDs.
+   *
+   * @returns Whether the default selection can safely read the layer list
+   */
+  private _basemapReady(): boolean {
+    return !this._options.basemapStyle || this._basemapLoadSettled;
+  }
+
+  /**
+   * Applies the deferred "select all visible layers" default if it is pending
+   * and the map is ready. Selects every visible, non-excluded layer on both
+   * sides so the panel checkboxes match what is rendered on launch.
+   *
+   * @returns Whether the default selection was applied on this call
+   */
+  private _applyDefaultSelectionIfPending(): boolean {
+    if (!this._pendingDefaultSelection) return false;
+    if (!this._map || !this._basemapReady()) return false;
+
+    const visibleIds = this.getLayers()
+      .filter((layer) => layer.visible)
+      .map((layer) => layer.id);
+    // Style not ready yet (no layers) — stay pending and retry later.
+    if (visibleIds.length === 0) return false;
+
+    this._pendingDefaultSelection = false;
+    this._state.leftLayers = [...visibleIds];
+    this._state.rightLayers = [...visibleIds];
+    this._updateLayerCheckboxes();
+    this._updateLayerVisibility();
+    return true;
   }
 
   /**
@@ -634,6 +690,7 @@ export class SwipeControl implements IControl {
       if (projection) {
         this._comparisonMap?.setProjection(projection);
       }
+      this._applyDefaultSelectionIfPending();
       this._updateLayerVisibility();
       this._updateClip();
     });
@@ -1343,6 +1400,10 @@ export class SwipeControl implements IControl {
 
     // Listen for layer changes to refresh the layer list
     this._styleDataHandler = () => {
+      // Retry the default selection in case layers loaded after the panel was
+      // built (it clears the pending flag once applied, so this is a no-op
+      // afterwards).
+      this._applyDefaultSelectionIfPending();
       this._refreshLayerList();
     };
     this._map?.on('styledata', this._styleDataHandler);
@@ -1645,6 +1706,45 @@ export class SwipeControl implements IControl {
         this._panel.style.right = `${buttonRight}px`;
         break;
     }
+
+    this._updatePanelMaxHeight(position, mapRect, buttonRect, panelGap);
+  }
+
+  /**
+   * Sizes the panel to the vertical space available within the map container,
+   * bounded by the configured `maxHeight`. This lets the panel grow to use the
+   * available screen space instead of being clamped to a small fixed height,
+   * while still shrinking to fit on short maps so it never overflows.
+   *
+   * @param position - The corner the control is anchored to
+   * @param mapRect - The map container bounds
+   * @param buttonRect - The toggle button bounds
+   * @param panelGap - The gap between the button and the panel
+   */
+  private _updatePanelMaxHeight(
+    position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right',
+    mapRect: DOMRect,
+    buttonRect: DOMRect,
+    panelGap: number
+  ): void {
+    if (!this._panel) return;
+
+    const buttonTop = buttonRect.top - mapRect.top;
+    const buttonBottom = mapRect.bottom - buttonRect.bottom;
+    const anchorOffset =
+      position === 'top-left' || position === 'top-right'
+        ? buttonTop + buttonRect.height + panelGap
+        : buttonBottom + buttonRect.height + panelGap;
+
+    // Space from the panel's anchored edge to the opposite map edge, less a
+    // small margin so the panel does not touch the map border.
+    const available = mapRect.height - anchorOffset - panelGap;
+    const minHeight = 160;
+    const capped = Math.max(
+      minHeight,
+      Math.min(this._options.maxHeight, Math.floor(available))
+    );
+    this._panel.style.maxHeight = `${capped}px`;
   }
 
   getPanelElement(): HTMLElement | null {
