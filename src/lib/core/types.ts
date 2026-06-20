@@ -99,13 +99,22 @@ export interface SwipeControlOptions {
 
   /**
    * When `true` and no explicit `leftLayers`/`rightLayers` are provided, the
-   * control preselects every currently visible (non-excluded) layer on both
-   * sides once the map and basemap are ready. This keeps the panel checkboxes
-   * in sync with what is rendered on launch and gives the user a populated
-   * baseline to compare from, instead of an empty checklist over a full map.
+   * control preselects the visible (non-excluded) layers once the map and
+   * basemap are ready: every visible layer on the left and only the basemap on
+   * the right. This keeps the panel checkboxes in sync with what is rendered on
+   * launch while giving an immediate overlay-vs-basemap comparison instead of
+   * two identical halves. When there is no grouped basemap it falls back to the
+   * bottom-most layer on the right.
    * @default false
    */
   selectVisibleByDefault?: boolean;
+
+  /**
+   * Whether clicking outside the panel collapses it. When `false` the panel
+   * only collapses via its close (×) button or `collapse()`.
+   * @default false
+   */
+  closeOnOutsideClick?: boolean;
 }
 
 /**
