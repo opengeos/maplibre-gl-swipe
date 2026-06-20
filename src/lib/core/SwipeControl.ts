@@ -115,7 +115,7 @@ export class SwipeControl implements IControl {
       active: this._options.active,
     };
     // Defer the "select all visible layers" default until the map (and basemap)
-    // are ready in onAdd; only when the caller did not pre-select any layers.
+    // are ready in onAdd; only when the caller did not preselect any layers.
     this._pendingDefaultSelection =
       this._options.selectVisibleByDefault &&
       this._state.leftLayers.length === 0 &&

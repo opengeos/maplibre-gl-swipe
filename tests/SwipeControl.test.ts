@@ -89,7 +89,7 @@ describe('SwipeControl', () => {
   });
 
   describe('selectVisibleByDefault', () => {
-    it('should pre-select all visible layers on both sides once ready', () => {
+    it('should preselect all visible layers on both sides once ready', () => {
       const autoControl = new SwipeControl({ selectVisibleByDefault: true });
       const map = new maplibregl.Map();
       // Simulate the map being attached, then run the deferred default-selection
