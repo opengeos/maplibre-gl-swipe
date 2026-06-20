@@ -89,11 +89,31 @@ describe('SwipeControl', () => {
   });
 
   describe('selectVisibleByDefault', () => {
-    it('should preselect all visible layers on both sides once ready', () => {
+    it('should put all visible layers on the left and only the basemap on the right', () => {
       const autoControl = new SwipeControl({ selectVisibleByDefault: true });
       const map = new maplibregl.Map();
       // Simulate the map being attached, then run the deferred default-selection
       // step the way onAdd does once the style/basemap are ready.
+      (autoControl as unknown as { _map: typeof map })._map = map;
+      // Treat layer1 as a basemap layer so it groups into the "__basemap__"
+      // entry, the way a real basemap style would.
+      (autoControl as unknown as { _basemapLayerIds: Set<string> })._basemapLayerIds =
+        new Set(['layer1']);
+      const applied = (
+        autoControl as unknown as {
+          _applyDefaultSelectionIfPending: () => boolean;
+        }
+      )._applyDefaultSelectionIfPending();
+
+      expect(applied).toBe(true);
+      const state = autoControl.getState();
+      expect(state.leftLayers).toEqual(['__basemap__', 'layer2', 'layer3']);
+      expect(state.rightLayers).toEqual(['__basemap__']);
+    });
+
+    it('should fall back to the bottom-most layer on the right when there is no basemap', () => {
+      const autoControl = new SwipeControl({ selectVisibleByDefault: true });
+      const map = new maplibregl.Map();
       (autoControl as unknown as { _map: typeof map })._map = map;
       const applied = (
         autoControl as unknown as {
@@ -104,7 +124,7 @@ describe('SwipeControl', () => {
       expect(applied).toBe(true);
       const state = autoControl.getState();
       expect(state.leftLayers).toEqual(['layer1', 'layer2', 'layer3']);
-      expect(state.rightLayers).toEqual(['layer1', 'layer2', 'layer3']);
+      expect(state.rightLayers).toEqual(['layer1']);
     });
 
     it('should not override an explicit layer selection', () => {

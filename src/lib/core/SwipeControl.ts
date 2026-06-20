@@ -33,6 +33,7 @@ const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className' | 'basemap
   basemapStyle: undefined,
   excludeLayers: [],
   selectVisibleByDefault: false,
+  closeOnOutsideClick: false,
 };
 
 /**
@@ -114,8 +115,8 @@ export class SwipeControl implements IControl {
       isDragging: false,
       active: this._options.active,
     };
-    // Defer the "select all visible layers" default until the map (and basemap)
-    // are ready in onAdd; only when the caller did not preselect any layers.
+    // Defer the default selection until the map (and basemap) are ready in
+    // onAdd; only when the caller did not preselect any layers.
     this._pendingDefaultSelection =
       this._options.selectVisibleByDefault &&
       this._state.leftLayers.length === 0 &&
@@ -362,9 +363,11 @@ export class SwipeControl implements IControl {
   }
 
   /**
-   * Applies the deferred "select all visible layers" default if it is pending
-   * and the map is ready. Selects every visible, non-excluded layer on both
-   * sides so the panel checkboxes match what is rendered on launch.
+   * Applies the deferred default selection if it is pending and the map is
+   * ready. Puts every visible, non-excluded layer on the left and keeps only
+   * the basemap on the right, so the panel matches what is rendered on launch
+   * and the swipe shows an immediate overlay-vs-basemap comparison instead of
+   * two identical halves.
    *
    * @returns Whether the default selection was applied on this call
    */
@@ -380,10 +383,25 @@ export class SwipeControl implements IControl {
 
     this._pendingDefaultSelection = false;
     this._state.leftLayers = [...visibleIds];
-    this._state.rightLayers = [...visibleIds];
+    this._state.rightLayers = this._defaultRightLayers(visibleIds);
     this._updateLayerCheckboxes();
     this._updateLayerVisibility();
     return true;
+  }
+
+  /**
+   * Picks the right-side layers for the default selection. Keeps only the
+   * basemap so the two halves differ out of the box; when there is no grouped
+   * basemap it falls back to the bottom-most layer (and to all layers when a
+   * single layer is the only thing to show).
+   *
+   * @param visibleIds - The visible, non-excluded layer IDs (bottom to top)
+   * @returns The layer IDs to show on the right side by default
+   */
+  private _defaultRightLayers(visibleIds: string[]): string[] {
+    if (visibleIds.includes('__basemap__')) return ['__basemap__'];
+    if (visibleIds.length > 1) return [visibleIds[0]];
+    return [...visibleIds];
   }
 
   /**
@@ -1356,19 +1374,21 @@ export class SwipeControl implements IControl {
       );
     }
 
-    // Click outside to close
-    this._clickOutsideHandler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (
-        this._container &&
-        this._panel &&
-        !this._container.contains(target) &&
-        !this._panel.contains(target)
-      ) {
-        this.collapse();
-      }
-    };
-    document.addEventListener('click', this._clickOutsideHandler);
+    // Click outside to close (opt-in; otherwise only the × button collapses it)
+    if (this._options.closeOnOutsideClick) {
+      this._clickOutsideHandler = (e: MouseEvent) => {
+        const target = e.target as Node;
+        if (
+          this._container &&
+          this._panel &&
+          !this._container.contains(target) &&
+          !this._panel.contains(target)
+        ) {
+          this.collapse();
+        }
+      };
+      document.addEventListener('click', this._clickOutsideHandler);
+    }
 
     // Window resize
     this._resizeHandler = () => {
