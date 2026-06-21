@@ -328,4 +328,28 @@ describe('SwipeControl', () => {
       expect(control.getPosition()).toBe(50);
     });
   });
+
+  describe('comparison overlay stacking', () => {
+    it('places the overlay just above a base-map canvas with a raised z-index', () => {
+      // A host may lift the base map canvas above its default stacking (e.g. to
+      // layer effect canvases beneath it under globe projection); the overlay
+      // must sit above it or the base map paints over the comparison map.
+      const canvas = document.createElement('canvas');
+      canvas.style.zIndex = '4';
+      const ctrl = new SwipeControl();
+      (ctrl as unknown as { _map: unknown })._map = { getCanvas: () => canvas };
+      expect(
+        (ctrl as unknown as { _getOverlayZIndex(): number })._getOverlayZIndex(),
+      ).toBe(5);
+    });
+
+    it('falls back to z-index 1 when the canvas uses default stacking', () => {
+      const canvas = document.createElement('canvas');
+      const ctrl = new SwipeControl();
+      (ctrl as unknown as { _map: unknown })._map = { getCanvas: () => canvas };
+      expect(
+        (ctrl as unknown as { _getOverlayZIndex(): number })._getOverlayZIndex(),
+      ).toBe(1);
+    });
+  });
 });
