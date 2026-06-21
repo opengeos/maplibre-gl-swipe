@@ -675,6 +675,13 @@ export class SwipeControl implements IControl {
     this._clipContainer.appendChild(this._comparisonContainer);
     this._mapContainer.appendChild(this._clipContainer);
 
+    // Keep the comparison overlay above the base map's canvas. A host may raise
+    // the canvas's own z-index (e.g. to stack effect canvases beneath it, as
+    // happens under globe projection), which would otherwise paint the base map
+    // over this overlay and hide the "right" layers entirely. The slider and
+    // panel sit at much higher z-indexes, so they stay above the overlay.
+    this._clipContainer.style.zIndex = String(this._getOverlayZIndex());
+
     // Get the current map's configuration
     const currentStyle = this._map.getStyle();
     const center = this._map.getCenter();
@@ -868,6 +875,26 @@ export class SwipeControl implements IControl {
   /**
    * Updates the clip-path on the comparison map container.
    */
+  /**
+   * Computes a z-index for the comparison overlay that sits just above the base
+   * map's canvas. Falls back to 1 when the canvas uses the default (`auto`)
+   * stacking, preserving the previous behavior for hosts that do not raise it.
+   *
+   * @returns The z-index to apply to the clip container.
+   */
+  private _getOverlayZIndex(): number {
+    const fallback = 1;
+    if (!this._map || typeof window === 'undefined') return fallback;
+    try {
+      const canvas = this._map.getCanvas();
+      const raw = window.getComputedStyle(canvas).zIndex;
+      const parsed = Number.parseInt(raw, 10);
+      return Number.isFinite(parsed) ? parsed + 1 : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   private _updateClip(): void {
     if (!this._clipContainer || !this._bounds) return;
 
