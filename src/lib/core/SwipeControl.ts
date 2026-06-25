@@ -34,6 +34,7 @@ const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className' | 'basemap
   excludeLayers: [],
   selectVisibleByDefault: false,
   closeOnOutsideClick: false,
+  visibleLayersOnly: false,
 };
 
 /**
@@ -471,6 +472,28 @@ export class SwipeControl implements IControl {
     }
 
     return layers;
+  }
+
+  /**
+   * Returns the layers to render in the panel's left/right lists. With
+   * `visibleLayersOnly` enabled this filters out hidden, unselected layers so
+   * the lists track the active working set; a hidden layer that is still
+   * selected on either side is kept (the control itself hides right-only
+   * layers on the main map, so their live visibility would otherwise drop them
+   * from the list). Without the option it returns every layer, matching the
+   * previous behavior.
+   *
+   * @returns The layers to show in the panel
+   */
+  private _getPanelLayers(): LayerInfo[] {
+    const layers = this.getLayers();
+    if (!this._options.visibleLayersOnly) return layers;
+    return layers.filter(
+      (layer) =>
+        layer.visible ||
+        this._state.leftLayers.includes(layer.id) ||
+        this._state.rightLayers.includes(layer.id)
+    );
   }
 
   /**
@@ -1159,7 +1182,7 @@ export class SwipeControl implements IControl {
     layerList.dataset.layerList = side;
 
     // Populate layer checkboxes
-    const layers = this.getLayers();
+    const layers = this._getPanelLayers();
     const selectedLayers =
       side === 'left' ? this._state.leftLayers : this._state.rightLayers;
 
@@ -1250,7 +1273,7 @@ export class SwipeControl implements IControl {
   private _refreshLayerList(): void {
     if (!this._panel) return;
 
-    const currentLayers = this.getLayers();
+    const currentLayers = this._getPanelLayers();
     const currentLayerIds = new Set(currentLayers.map((l) => l.id));
 
     // Update both left and right layer lists

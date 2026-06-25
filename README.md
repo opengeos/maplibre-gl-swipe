@@ -128,6 +128,7 @@ The main control class that implements MapLibre's `IControl` interface.
 | `maxHeight`   | `number`                     | `500`           | Max panel height (px); the panel also shrinks to fit the available map height |
 | `selectVisibleByDefault` | `boolean`         | `false`         | Preselect visible layers (all on the left, basemap on the right) when no `leftLayers`/`rightLayers` are given |
 | `closeOnOutsideClick` | `boolean`            | `false`         | Collapse the panel when clicking outside it (otherwise only the × button does) |
+| `visibleLayersOnly` | `boolean`              | `false`         | List only currently visible layers (plus any already selected) in the panel; the lists update live as visibility changes |
 
 #### Methods
 
