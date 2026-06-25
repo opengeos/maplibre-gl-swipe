@@ -123,6 +123,17 @@
   transition: box-shadow 0.1s ease;
 }
 
+/* Locked slider: shown when the swipe tool is inactive. The split view stays
+   frozen in place, but the handle is dimmed and dragging is disabled. */
+.swipe-slider-locked .swipe-slider-handle {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.swipe-slider-locked .swipe-slider-handle:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
 .swipe-handle-icon {
   color: #666;
   transition: color 0.1s ease;

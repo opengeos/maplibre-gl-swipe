@@ -148,10 +148,8 @@ export class SwipeControl implements IControl {
         this._applyDefaultSelectionIfPending();
         this._updateClip();
         this._updateLayerVisibility();
-        // Apply active state to newly created containers
-        if (!this._state.active) {
-          if (this._clipContainer) this._clipContainer.style.display = 'none';
-        }
+        // When starting inactive, keep the comparison view visible and only
+        // lock the slider (handled in the synchronous onAdd path). See #842.
       });
     }
 
@@ -193,10 +191,10 @@ export class SwipeControl implements IControl {
     this._updateClip();
     this._updateLayerVisibility();
 
-    // Apply initial active state
+    // Apply initial active state: when starting inactive, keep the comparison
+    // view visible but lock the slider so it cannot be dragged (see #842).
     if (!this._state.active) {
-      if (this._slider) this._slider.style.display = 'none';
-      if (this._clipContainer) this._clipContainer.style.display = 'none';
+      this._slider?.classList.add('swipe-slider-locked');
     }
 
     // Initial panel state (only if basemapStyle not provided, otherwise handled above)
@@ -497,6 +495,19 @@ export class SwipeControl implements IControl {
   }
 
   /**
+   * Returns the panel layers in top-to-bottom display order. `getLayers()`
+   * follows MapLibre's paint order (bottom layer first), which is the reverse
+   * of how layer managers usually present a stack (top layer first). The panel
+   * reverses it so its left/right lists mirror the host's layer manager, with
+   * the top-most layer at the top and the grouped basemap at the bottom.
+   *
+   * @returns The panel layers ordered top-of-stack first
+   */
+  private _getDisplayLayers(): LayerInfo[] {
+    return [...this._getPanelLayers()].reverse();
+  }
+
+  /**
    * Gets the actual layer IDs for a given layer ID.
    * If the layer ID is '__basemap__', returns all basemap layer IDs.
    *
@@ -588,9 +599,10 @@ export class SwipeControl implements IControl {
     this._state.active = active;
 
     if (active) {
-      // Show slider and clip container
+      // Show slider and clip container, and unlock the slider for dragging
       if (this._slider) this._slider.style.display = '';
       if (this._clipContainer) this._clipContainer.style.display = '';
+      this._slider?.classList.remove('swipe-slider-locked');
       // Resize comparison map after container becomes visible again
       if (this._comparisonMap) {
         this._comparisonMap.resize();
@@ -599,9 +611,12 @@ export class SwipeControl implements IControl {
       this._updateLayerVisibility();
       this._emit('activate');
     } else {
-      // Hide slider and clip container, remove clip-path
-      if (this._slider) this._slider.style.display = 'none';
-      if (this._clipContainer) this._clipContainer.style.display = 'none';
+      // Freeze the comparison in place instead of tearing it down: keep the
+      // split view and slider visible, but lock the slider so it can no longer
+      // be dragged (drag is also guarded in _onDragStart). Hiding the whole
+      // comparison here previously left the panel's layer/orientation controls
+      // referencing a view that was no longer on screen. See issue #842.
+      this._slider?.classList.add('swipe-slider-locked');
       this._emit('deactivate');
     }
 
@@ -1181,41 +1196,60 @@ export class SwipeControl implements IControl {
     layerList.className = 'swipe-layer-list';
     layerList.dataset.layerList = side;
 
-    // Populate layer checkboxes
-    const layers = this._getPanelLayers();
+    // Populate layer checkboxes in top-to-bottom display order
+    const layers = this._getDisplayLayers();
     const selectedLayers =
       side === 'left' ? this._state.leftLayers : this._state.rightLayers;
 
     layers.forEach((layer) => {
-      const item = document.createElement('div');
-      item.className = 'swipe-layer-item';
-
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.id = `swipe-${side}-${layer.id}`;
-      checkbox.dataset.layerId = layer.id;
-      checkbox.dataset.side = side;
-      checkbox.checked = selectedLayers.includes(layer.id);
-      checkbox.addEventListener('change', () => {
-        this._handleLayerToggle(side, layer.id, checkbox.checked);
-      });
-
-      const itemLabel = document.createElement('label');
-      itemLabel.htmlFor = checkbox.id;
-      // Display "Basemap" for the grouped basemap layer
-      itemLabel.textContent = layer.id === '__basemap__' ? 'Basemap' : layer.id;
-      itemLabel.title = layer.id === '__basemap__'
-        ? 'All basemap layers grouped together'
-        : `Type: ${layer.type}, Source: ${layer.source}`;
-
-      item.appendChild(checkbox);
-      item.appendChild(itemLabel);
-      layerList.appendChild(item);
+      layerList.appendChild(this._createLayerItem(side, layer, selectedLayers));
     });
 
     group.appendChild(label);
     group.appendChild(layerList);
     return group;
+  }
+
+  /**
+   * Builds a single layer checkbox row for the panel. Shared by the initial
+   * panel render and the live refresh so both produce identical markup,
+   * including the grouped basemap label.
+   *
+   * @param side - 'left' or 'right'
+   * @param layer - The layer to render
+   * @param selectedLayers - The currently selected layer IDs for this side
+   * @returns The layer item element
+   */
+  private _createLayerItem(
+    side: 'left' | 'right',
+    layer: LayerInfo,
+    selectedLayers: string[]
+  ): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'swipe-layer-item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `swipe-${side}-${layer.id}`;
+    checkbox.dataset.layerId = layer.id;
+    checkbox.dataset.side = side;
+    checkbox.checked = selectedLayers.includes(layer.id);
+    checkbox.addEventListener('change', () => {
+      this._handleLayerToggle(side, layer.id, checkbox.checked);
+    });
+
+    const itemLabel = document.createElement('label');
+    itemLabel.htmlFor = checkbox.id;
+    const isBasemap = layer.id === '__basemap__';
+    // Display "Basemap" for the grouped basemap entry.
+    itemLabel.textContent = isBasemap ? 'Basemap' : layer.id;
+    itemLabel.title = isBasemap
+      ? 'All basemap layers grouped together'
+      : `Type: ${layer.type}, Source: ${layer.source}`;
+
+    item.appendChild(checkbox);
+    item.appendChild(itemLabel);
+    return item;
   }
 
   /**
@@ -1273,7 +1307,7 @@ export class SwipeControl implements IControl {
   private _refreshLayerList(): void {
     if (!this._panel) return;
 
-    const currentLayers = this._getPanelLayers();
+    const currentLayers = this._getDisplayLayers();
     const currentLayerIds = new Set(currentLayers.map((l) => l.id));
 
     // Update both left and right layer lists
@@ -1312,28 +1346,28 @@ export class SwipeControl implements IControl {
       // Add checkboxes for new layers
       currentLayers.forEach((layer) => {
         if (!existingLayerIds.has(layer.id)) {
-          const item = document.createElement('div');
-          item.className = 'swipe-layer-item';
-
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.id = `swipe-${side}-${layer.id}`;
-          checkbox.dataset.layerId = layer.id;
-          checkbox.dataset.side = side;
-          checkbox.checked = selectedLayers.includes(layer.id);
-          checkbox.addEventListener('change', () => {
-            this._handleLayerToggle(side, layer.id, checkbox.checked);
-          });
-
-          const itemLabel = document.createElement('label');
-          itemLabel.htmlFor = checkbox.id;
-          itemLabel.textContent = layer.id;
-          itemLabel.title = `Type: ${layer.type}, Source: ${layer.source}`;
-
-          item.appendChild(checkbox);
-          item.appendChild(itemLabel);
-          layerList.appendChild(item);
+          layerList.appendChild(
+            this._createLayerItem(side, layer, selectedLayers)
+          );
         }
+      });
+
+      // Reorder existing rows so the list keeps its top-to-bottom display order
+      // even when layers were appended above (newly added rows otherwise land at
+      // the bottom regardless of their stack position).
+      const itemsById = new globalThis.Map<string, HTMLElement>();
+      layerList
+        .querySelectorAll<HTMLInputElement>(
+          'input[type="checkbox"][data-layer-id]'
+        )
+        .forEach((cb) => {
+          const id = cb.dataset.layerId;
+          const item = cb.closest<HTMLElement>('.swipe-layer-item');
+          if (id && item) itemsById.set(id, item);
+        });
+      currentLayers.forEach((layer) => {
+        const item = itemsById.get(layer.id);
+        if (item) layerList.appendChild(item);
       });
     });
   }

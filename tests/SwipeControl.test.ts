@@ -378,6 +378,82 @@ describe('SwipeControl', () => {
     });
   });
 
+  describe('panel display order', () => {
+    it('reverses the paint order so the top-of-stack layer is listed first', () => {
+      const ctrl = new SwipeControl();
+      (ctrl as unknown as { _map: unknown })._map = new maplibregl.Map();
+      const ids = (
+        ctrl as unknown as { _getDisplayLayers: () => { id: string }[] }
+      )
+        ._getDisplayLayers()
+        .map((l) => l.id);
+      // getLayers() follows MapLibre's bottom-to-top paint order
+      // (layer1, layer2, layer3); the panel reverses it so the top layer is
+      // first, mirroring a host layer manager.
+      expect(ids).toEqual(['layer3', 'layer2', 'layer1']);
+    });
+
+    it('places the grouped basemap entry at the bottom of the list', () => {
+      const ctrl = new SwipeControl();
+      (ctrl as unknown as { _map: unknown })._map = new maplibregl.Map();
+      (
+        ctrl as unknown as { _basemapLayerIds: Set<string> }
+      )._basemapLayerIds = new Set(['layer1']);
+      const ids = (
+        ctrl as unknown as { _getDisplayLayers: () => { id: string }[] }
+      )
+        ._getDisplayLayers()
+        .map((l) => l.id);
+      // layer1 groups into __basemap__ at the bottom of the stack, so after the
+      // reversal it sits last, where the host shows its base layer.
+      expect(ids).toEqual(['layer3', 'layer2', '__basemap__']);
+    });
+  });
+
+  describe('setActive', () => {
+    // Attach the DOM nodes setActive touches, since the control is not added to
+    // a real map in these unit tests.
+    const attachElements = (ctrl: SwipeControl) => {
+      const slider = document.createElement('div');
+      slider.className = 'swipe-slider swipe-slider-vertical';
+      const clip = document.createElement('div');
+      (ctrl as unknown as { _slider: HTMLElement })._slider = slider;
+      (ctrl as unknown as { _clipContainer: HTMLElement })._clipContainer =
+        clip;
+      return { slider, clip };
+    };
+
+    it('keeps the comparison overlay visible and locks the slider when deactivated', () => {
+      const ctrl = new SwipeControl({ active: true });
+      const { slider, clip } = attachElements(ctrl);
+      ctrl.setActive(false);
+      expect(ctrl.isActive()).toBe(false);
+      // The split view stays on screen; only the slider is locked. See #842.
+      expect(clip.style.display).not.toBe('none');
+      expect(slider.classList.contains('swipe-slider-locked')).toBe(true);
+    });
+
+    it('unlocks the slider and keeps the overlay visible when reactivated', () => {
+      const ctrl = new SwipeControl({ active: false });
+      const { slider, clip } = attachElements(ctrl);
+      slider.classList.add('swipe-slider-locked');
+      ctrl.setActive(true);
+      expect(ctrl.isActive()).toBe(true);
+      expect(clip.style.display).not.toBe('none');
+      expect(slider.classList.contains('swipe-slider-locked')).toBe(false);
+    });
+
+    it('does not start a drag while inactive', () => {
+      const ctrl = new SwipeControl({ active: false });
+      const handler = vi.fn();
+      ctrl.on('slidestart', handler);
+      (
+        ctrl as unknown as { _onDragStart: (e: MouseEvent) => void }
+      )._onDragStart(new MouseEvent('mousedown'));
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
+
   describe('comparison overlay stacking', () => {
     it('places the overlay just above a base-map canvas with a raised z-index', () => {
       // A host may lift the base map canvas above its default stacking (e.g. to
