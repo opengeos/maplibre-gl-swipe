@@ -159,6 +159,55 @@ describe('SwipeControl', () => {
     });
   });
 
+  describe('visibleLayersOnly', () => {
+    // Builds a fake map whose layer visibility is controlled per id, so the
+    // panel-filtering logic can be exercised without a real MapLibre instance.
+    const makeMapWithVisibility = (hidden: Set<string>) => ({
+      getStyle: () => ({
+        layers: [
+          { id: 'layer1', type: 'fill', source: 'source1' },
+          { id: 'layer2', type: 'raster', source: 'source2' },
+          { id: 'layer3', type: 'line', source: 'source1' },
+        ],
+      }),
+      getLayoutProperty: (id: string) => (hidden.has(id) ? 'none' : 'visible'),
+    });
+
+    const panelLayerIds = (ctrl: SwipeControl): string[] =>
+      (
+        ctrl as unknown as { _getPanelLayers: () => { id: string }[] }
+      )._getPanelLayers().map((l) => l.id);
+
+    it('returns every layer when the option is off (default)', () => {
+      const ctrl = new SwipeControl();
+      (ctrl as unknown as { _map: unknown })._map = makeMapWithVisibility(
+        new Set(['layer2'])
+      );
+      expect(panelLayerIds(ctrl)).toEqual(['layer1', 'layer2', 'layer3']);
+    });
+
+    it('omits hidden, unselected layers when the option is on', () => {
+      const ctrl = new SwipeControl({ visibleLayersOnly: true });
+      (ctrl as unknown as { _map: unknown })._map = makeMapWithVisibility(
+        new Set(['layer2'])
+      );
+      expect(panelLayerIds(ctrl)).toEqual(['layer1', 'layer3']);
+    });
+
+    it('keeps a hidden layer that is still selected on either side', () => {
+      const ctrl = new SwipeControl({
+        visibleLayersOnly: true,
+        rightLayers: ['layer2'],
+      });
+      // layer2 is hidden on the main map (the control shows it on the right via
+      // the comparison map), but it must stay listed so the user can deselect it.
+      (ctrl as unknown as { _map: unknown })._map = makeMapWithVisibility(
+        new Set(['layer2'])
+      );
+      expect(panelLayerIds(ctrl)).toEqual(['layer1', 'layer2', 'layer3']);
+    });
+  });
+
   describe('getPosition / setPosition', () => {
     it('should return initial position', () => {
       expect(control.getPosition()).toBe(50);

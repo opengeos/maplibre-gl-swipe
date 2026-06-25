@@ -115,6 +115,18 @@ export interface SwipeControlOptions {
    * @default false
    */
   closeOnOutsideClick?: boolean;
+
+  /**
+   * When `true`, the panel's left/right layer lists only show layers that are
+   * currently visible on the map, plus any layer already selected on either
+   * side (so a right-only layer the control hides on the main map still
+   * appears). Hidden, unselected layers are omitted, keeping the lists focused
+   * on the active working set. The lists update live as layer visibility
+   * changes, since visibility toggles fire `styledata`. The grouped basemap
+   * entry is always shown.
+   * @default false
+   */
+  visibleLayersOnly?: boolean;
 }
 
 /**
