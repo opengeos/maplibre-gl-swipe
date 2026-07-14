@@ -12,6 +12,9 @@ export type {
   SwipeControlEventHandler,
   SwipeControlEventData,
   SwipeOrientation,
+  SwipeLayerSide,
+  SwipeProviderLayer,
+  SwipeLayerProvider,
   LayerInfo,
 } from './lib/core/types';
 

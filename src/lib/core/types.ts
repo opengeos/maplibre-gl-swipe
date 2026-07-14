@@ -127,6 +127,78 @@ export interface SwipeControlOptions {
    * @default false
    */
   visibleLayersOnly?: boolean;
+
+  /**
+   * A provider for layers the control cannot discover through
+   * `map.getStyle()`. MapLibre omits custom layers (deck.gl overlays and other
+   * runtime `type: 'custom'` layers) from the serialized style, so the dual-map
+   * clip cannot list, hide, or copy them. A provider bridges that gap: it lists
+   * its layers for the panel and applies each side assignment itself. The
+   * comparison map's canvas is already clipped to the swipe region, so a
+   * provider that renders onto the comparison map gets clipping for free and
+   * only decides which side(s) to draw on. Optional and fully backward
+   * compatible: without it the control behaves exactly as before.
+   */
+  layerProvider?: SwipeLayerProvider;
+}
+
+/**
+ * Which side(s) of the swipe a provider layer should render on, resolved from
+ * the panel's left/right selection: `left` (left only), `right` (right only,
+ * i.e. the comparison side), `both` (selected on both sides), or `none` (not
+ * selected on either).
+ */
+export type SwipeLayerSide = 'left' | 'right' | 'both' | 'none';
+
+/**
+ * A custom/overlay layer contributed by a {@link SwipeLayerProvider}. Mirrors
+ * the fields the panel needs from a native {@link LayerInfo}.
+ */
+export interface SwipeProviderLayer {
+  /** Unique layer id, used as the panel row id and for left/right selection. */
+  id: string;
+  /** Display type chip shown in the panel (e.g. `'raster'`). */
+  type: string;
+  /** Current visibility, honored by the `visibleLayersOnly` panel filter. */
+  visible: boolean;
+}
+
+/**
+ * Lets a host contribute layers the control cannot see through
+ * `map.getStyle()` -- e.g. deck.gl / custom layers, which MapLibre omits from
+ * the serialized style. The provider lists its layers for the panel and applies
+ * each side assignment itself, because the control's dual-map clipping only
+ * understands serializable style layers.
+ */
+export interface SwipeLayerProvider {
+  /**
+   * The provider's layers, in bottom-to-top paint order (matching
+   * `getStyle().layers`). They are appended after the native style layers, so
+   * overlays that draw on top of the map should appear last.
+   */
+  getLayers(): SwipeProviderLayer[];
+
+  /**
+   * Render or toggle one provider layer for the resolved side assignment.
+   * Called on every visibility update and whenever the comparison map is
+   * (re)created, so the provider can (re)mount whatever it renders onto it.
+   *
+   * @param layerId - The provider layer id.
+   * @param side - The resolved side: `left`, `right`, `both`, or `none`.
+   * @param comparisonMap - The current comparison map, or `undefined` when none
+   *   exists yet (the provider should then render on the main map only).
+   */
+  applySide(
+    layerId: string,
+    side: SwipeLayerSide,
+    comparisonMap: Map | undefined
+  ): void;
+
+  /**
+   * Optional teardown, called when the comparison map is destroyed (the control
+   * is removed) so the provider can drop any overlay it mounted on it.
+   */
+  detachComparison?(): void;
 }
 
 /**
