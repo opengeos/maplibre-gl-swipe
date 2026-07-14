@@ -7,16 +7,24 @@ import type {
   SwipeControlEventHandler,
   SwipeControlEventData,
   SwipeOrientation,
+  SwipeLayerSide,
+  SwipeLayerProvider,
   LayerInfo,
 } from './types';
 
 /**
  * Default options for the SwipeControl
  */
-const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className' | 'basemapStyle' | 'excludeLayers'>> & {
+const DEFAULT_OPTIONS: Required<
+  Omit<
+    SwipeControlOptions,
+    'className' | 'basemapStyle' | 'excludeLayers' | 'layerProvider'
+  >
+> & {
   className: string;
   basemapStyle: string | undefined;
   excludeLayers: string[];
+  layerProvider: SwipeLayerProvider | undefined;
 } = {
   orientation: 'vertical',
   position: 50,
@@ -35,6 +43,7 @@ const DEFAULT_OPTIONS: Required<Omit<SwipeControlOptions, 'className' | 'basemap
   selectVisibleByDefault: false,
   closeOnOutsideClick: false,
   visibleLayersOnly: false,
+  layerProvider: undefined,
 };
 
 /**
@@ -70,10 +79,16 @@ export class SwipeControl implements IControl {
   private _sliderHandle?: HTMLElement;
   private _clipContainer?: HTMLElement;
   private _comparisonContainer?: HTMLElement;
-  private _options: Required<Omit<SwipeControlOptions, 'className' | 'basemapStyle' | 'excludeLayers'>> & {
+  private _options: Required<
+    Omit<
+      SwipeControlOptions,
+      'className' | 'basemapStyle' | 'excludeLayers' | 'layerProvider'
+    >
+  > & {
     className: string;
     basemapStyle: string | undefined;
     excludeLayers: string[];
+    layerProvider: SwipeLayerProvider | undefined;
   };
   private _state: SwipeState;
   private _basemapLayerIds: Set<string> = new Set();
@@ -105,8 +120,16 @@ export class SwipeControl implements IControl {
    */
   constructor(options?: Partial<SwipeControlOptions>) {
     this._options = { ...DEFAULT_OPTIONS, ...options } as Required<
-      Omit<SwipeControlOptions, 'className' | 'basemapStyle' | 'excludeLayers'>
-    > & { className: string; basemapStyle: string | undefined; excludeLayers: string[] };
+      Omit<
+        SwipeControlOptions,
+        'className' | 'basemapStyle' | 'excludeLayers' | 'layerProvider'
+      >
+    > & {
+      className: string;
+      basemapStyle: string | undefined;
+      excludeLayers: string[];
+      layerProvider: SwipeLayerProvider | undefined;
+    };
     this._state = {
       collapsed: this._options.collapsed,
       position: this._options.position,
@@ -221,8 +244,14 @@ export class SwipeControl implements IControl {
     }
     this._rafPendingPosition = null;
 
-    // Remove comparison map
+    // Remove comparison map. Notify the provider first so it can drop any
+    // overlay it mounted on the comparison map before that map is destroyed.
     if (this._comparisonMap) {
+      try {
+        this._options.layerProvider?.detachComparison?.();
+      } catch {
+        // A provider fault must not block control teardown.
+      }
       this._comparisonMap.remove();
       this._comparisonMap = undefined;
     }
@@ -469,6 +498,23 @@ export class SwipeControl implements IControl {
       });
     }
 
+    // Append provider layers (deck.gl / custom layers MapLibre omits from
+    // getStyle()). They draw on top of the style layers, so appending them here
+    // -- after the bottom-to-top native list -- keeps the panel's stack order
+    // right once _getDisplayLayers() reverses it. Exclude patterns apply to them
+    // too, for parity with native layers.
+    if (this._options.layerProvider) {
+      for (const providerLayer of this._options.layerProvider.getLayers()) {
+        if (this._isLayerExcluded(providerLayer.id)) continue;
+        layers.push({
+          id: providerLayer.id,
+          type: providerLayer.type,
+          source: '',
+          visible: providerLayer.visible,
+        });
+      }
+    }
+
     return layers;
   }
 
@@ -649,6 +695,19 @@ export class SwipeControl implements IControl {
    */
   getComparisonMap(): MapLibreMap | undefined {
     return this._comparisonMap;
+  }
+
+  /**
+   * Re-reads the layer lists (native plus any `layerProvider` layers),
+   * rebuilds the panel rows, and re-applies side visibility. Call this when the
+   * set of provider layers changes -- a custom/deck layer added or removed --
+   * because those layers are invisible to the `styledata` event the control
+   * otherwise refreshes on. A no-op-safe convenience for hosts with a provider.
+   */
+  refreshLayers(): void {
+    this._applyDefaultSelectionIfPending();
+    this._refreshLayerList();
+    this._updateLayerVisibility();
   }
 
   /**
@@ -852,6 +911,33 @@ export class SwipeControl implements IControl {
         }
       } catch {
         // Style may not be loaded yet
+      }
+    }
+
+    // Provider layers are invisible to getStyle(), so the dual-map passes above
+    // never touch them. Resolve each one's side from the same left/right sets
+    // and hand it to the provider, which owns rendering it on the main map
+    // and/or the comparison map. Runs even before the comparison map exists so
+    // the provider can render on the main map immediately; the comparison map's
+    // 'load' handler calls this again with the map once it is ready.
+    const provider = this._options.layerProvider;
+    if (provider) {
+      for (const providerLayer of provider.getLayers()) {
+        const isLeft = leftSet.has(providerLayer.id);
+        const isRight = rightSet.has(providerLayer.id);
+        const side: SwipeLayerSide =
+          isLeft && isRight
+            ? 'both'
+            : isLeft
+              ? 'left'
+              : isRight
+                ? 'right'
+                : 'none';
+        try {
+          provider.applySide(providerLayer.id, side, this._comparisonMap);
+        } catch {
+          // A provider fault must not break the native layer sync above.
+        }
       }
     }
   }

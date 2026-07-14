@@ -208,6 +208,134 @@ describe('SwipeControl', () => {
     });
   });
 
+  describe('layerProvider', () => {
+    // A fake map exposing just the surface getLayers / _updateLayerVisibility
+    // use. Visibility is tracked per id so provider assignment can be asserted.
+    const makeMap = () => {
+      const visibility = new globalThis.Map<string, string>();
+      return {
+        map: {
+          getStyle: () => ({
+            layers: [
+              { id: 'layer1', type: 'fill', source: 'source1' },
+              { id: 'layer2', type: 'raster', source: 'source2' },
+            ],
+          }),
+          getLayoutProperty: (id: string) => visibility.get(id) ?? 'visible',
+          setLayoutProperty: (id: string, _prop: string, value: string) =>
+            visibility.set(id, value),
+          isStyleLoaded: () => true,
+        },
+        visibility,
+      };
+    };
+
+    const makeProvider = (
+      layers: { id: string; type: string; visible: boolean }[]
+    ) => {
+      const calls: { id: string; side: string }[] = [];
+      return {
+        provider: {
+          getLayers: () => layers,
+          applySide: (id: string, side: string) => calls.push({ id, side }),
+          detachComparison: vi.fn(),
+        },
+        calls,
+      };
+    };
+
+    const panelLayerIds = (ctrl: SwipeControl): string[] =>
+      (
+        ctrl as unknown as { _getPanelLayers: () => { id: string }[] }
+      )._getPanelLayers().map((l) => l.id);
+
+    it('appends provider layers after the native style layers', () => {
+      const { provider } = makeProvider([
+        { id: 'cog-a', type: 'raster', visible: true },
+      ]);
+      const ctrl = new SwipeControl({ layerProvider: provider });
+      (ctrl as unknown as { _map: unknown })._map = makeMap().map;
+      expect(ctrl.getLayers().map((l) => l.id)).toEqual([
+        'layer1',
+        'layer2',
+        'cog-a',
+      ]);
+    });
+
+    it('honors excludeLayers patterns for provider layers', () => {
+      const { provider } = makeProvider([
+        { id: 'cog-a', type: 'raster', visible: true },
+        { id: 'helper-1', type: 'raster', visible: true },
+      ]);
+      const ctrl = new SwipeControl({
+        layerProvider: provider,
+        excludeLayers: ['helper-*'],
+      });
+      (ctrl as unknown as { _map: unknown })._map = makeMap().map;
+      expect(ctrl.getLayers().map((l) => l.id)).toEqual([
+        'layer1',
+        'layer2',
+        'cog-a',
+      ]);
+    });
+
+    it('filters hidden, unselected provider layers under visibleLayersOnly', () => {
+      const { provider } = makeProvider([
+        { id: 'cog-visible', type: 'raster', visible: true },
+        { id: 'cog-hidden', type: 'raster', visible: false },
+      ]);
+      const ctrl = new SwipeControl({
+        layerProvider: provider,
+        visibleLayersOnly: true,
+      });
+      (ctrl as unknown as { _map: unknown })._map = makeMap().map;
+      expect(panelLayerIds(ctrl)).toEqual(['layer1', 'layer2', 'cog-visible']);
+    });
+
+    it('keeps a hidden provider layer that is still selected', () => {
+      const { provider } = makeProvider([
+        { id: 'cog-hidden', type: 'raster', visible: false },
+      ]);
+      const ctrl = new SwipeControl({
+        layerProvider: provider,
+        visibleLayersOnly: true,
+        rightLayers: ['cog-hidden'],
+      });
+      (ctrl as unknown as { _map: unknown })._map = makeMap().map;
+      expect(panelLayerIds(ctrl)).toContain('cog-hidden');
+    });
+
+    it('resolves each provider layer side from the left/right selection', () => {
+      const { provider, calls } = makeProvider([
+        { id: 'cog-left', type: 'raster', visible: true },
+        { id: 'cog-right', type: 'raster', visible: true },
+        { id: 'cog-both', type: 'raster', visible: true },
+        { id: 'cog-none', type: 'raster', visible: true },
+      ]);
+      const ctrl = new SwipeControl({
+        layerProvider: provider,
+        leftLayers: ['cog-left', 'cog-both'],
+        rightLayers: ['cog-right', 'cog-both'],
+      });
+      (ctrl as unknown as { _map: unknown })._map = makeMap().map;
+      (
+        ctrl as unknown as { _updateLayerVisibility: () => void }
+      )._updateLayerVisibility();
+      expect(calls).toEqual([
+        { id: 'cog-left', side: 'left' },
+        { id: 'cog-right', side: 'right' },
+        { id: 'cog-both', side: 'both' },
+        { id: 'cog-none', side: 'none' },
+      ]);
+    });
+
+    it('does not disturb behavior when no provider is supplied', () => {
+      const ctrl = new SwipeControl();
+      (ctrl as unknown as { _map: unknown })._map = makeMap().map;
+      expect(ctrl.getLayers().map((l) => l.id)).toEqual(['layer1', 'layer2']);
+    });
+  });
+
   describe('getPosition / setPosition', () => {
     it('should return initial position', () => {
       expect(control.getPosition()).toBe(50);
