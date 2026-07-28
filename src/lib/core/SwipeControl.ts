@@ -1,5 +1,7 @@
-import maplibregl from 'maplibre-gl';
-import type { IControl, Map as MapLibreMap, MapOptions } from 'maplibre-gl';
+// Import `Map` as a value (a class is both), not through a default import:
+// MapLibre v6 is ESM-only and no longer has a default export.
+import { Map as MapLibreMap } from 'maplibre-gl';
+import type { IControl, MapOptions } from 'maplibre-gl';
 import type {
   SwipeControlOptions,
   SwipeState,
@@ -804,7 +806,7 @@ export class SwipeControl implements IControl {
       attributionControl: false,
     };
 
-    this._comparisonMap = new maplibregl.Map(mapOptions);
+    this._comparisonMap = new MapLibreMap(mapOptions);
 
     // Wait for comparison map to load before syncing
     this._comparisonMap.on('load', () => {
