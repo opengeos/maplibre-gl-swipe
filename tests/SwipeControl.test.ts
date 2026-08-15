@@ -262,6 +262,21 @@ describe('SwipeControl', () => {
       ]);
     });
 
+    it('does not duplicate a provider layer already present in the style', () => {
+      const { provider } = makeProvider([
+        { id: 'layer2', type: 'raster', visible: true },
+        { id: 'cog-a', type: 'raster', visible: true },
+        { id: 'cog-a', type: 'raster', visible: true },
+      ]);
+      const ctrl = new SwipeControl({ layerProvider: provider });
+      (ctrl as unknown as { _map: unknown })._map = makeMap().map;
+      expect(ctrl.getLayers().map((l) => l.id)).toEqual([
+        'layer1',
+        'layer2',
+        'cog-a',
+      ]);
+    });
+
     it('honors excludeLayers patterns for provider layers', () => {
       const { provider } = makeProvider([
         { id: 'cog-a', type: 'raster', visible: true },

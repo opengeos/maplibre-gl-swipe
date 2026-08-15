@@ -506,14 +506,21 @@ export class SwipeControl implements IControl {
     // right once _getDisplayLayers() reverses it. Exclude patterns apply to them
     // too, for parity with native layers.
     if (this._options.layerProvider) {
+      const existingLayerIds = new Set(layers.map((layer) => layer.id));
       for (const providerLayer of this._options.layerProvider.getLayers()) {
         if (this._isLayerExcluded(providerLayer.id)) continue;
+        // An interleaved custom/deck layer can be visible through getStyle()
+        // and still need a provider to mirror it onto the comparison map.
+        // Keep the provider behavior, but do not render a second panel row for
+        // the same logical layer id.
+        if (existingLayerIds.has(providerLayer.id)) continue;
         layers.push({
           id: providerLayer.id,
           type: providerLayer.type,
           source: '',
           visible: providerLayer.visible,
         });
+        existingLayerIds.add(providerLayer.id);
       }
     }
 
