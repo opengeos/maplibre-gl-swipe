@@ -553,6 +553,60 @@ describe('SwipeControl', () => {
     });
   });
 
+  describe('refreshLayers', () => {
+    // Build a control with a live panel, the way onAdd would.
+    const withPanel = (): SwipeControl => {
+      const ctrl = new SwipeControl();
+      (ctrl as unknown as { _map: unknown })._map = new maplibregl.Map();
+      (ctrl as unknown as { _panel: HTMLElement })._panel = (
+        ctrl as unknown as { _createPanel: () => HTMLElement }
+      )._createPanel();
+      return ctrl;
+    };
+
+    const listOf = (ctrl: SwipeControl, side: 'left' | 'right'): HTMLElement =>
+      (ctrl as unknown as { _panel: HTMLElement })._panel.querySelector(
+        `[data-layer-list="${side}"]`
+      ) as HTMLElement;
+
+    const rowIds = (ctrl: SwipeControl, side: 'left' | 'right'): string[] =>
+      Array.from(
+        listOf(ctrl, side).querySelectorAll<HTMLInputElement>(
+          'input[type="checkbox"][data-layer-id]'
+        )
+      ).map((cb) => cb.dataset.layerId as string);
+
+    it('does not touch the DOM when nothing changed', () => {
+      const ctrl = withPanel();
+      const list = listOf(ctrl, 'right');
+      expect(rowIds(ctrl, 'right')).toEqual(['layer3', 'layer2', 'layer1']);
+
+      const observer = new MutationObserver(() => {});
+      observer.observe(list, { childList: true });
+      ctrl.refreshLayers();
+      const records = observer.takeRecords();
+      observer.disconnect();
+
+      // Re-appending every row relocates its node, and a node moved between
+      // mousedown and mouseup never fires a `click`, so the checkboxes stop
+      // responding on a host whose map refreshes often (deck.gl overlays,
+      // streaming tiles). See opengeos/GeoLibre#2347.
+      expect(records).toEqual([]);
+    });
+
+    it('still repairs the order when rows are out of place', () => {
+      const ctrl = withPanel();
+      const list = listOf(ctrl, 'left');
+      // Shuffle: move the first row (layer3) to the end.
+      list.appendChild(list.firstElementChild as HTMLElement);
+      expect(rowIds(ctrl, 'left')).toEqual(['layer2', 'layer1', 'layer3']);
+
+      ctrl.refreshLayers();
+
+      expect(rowIds(ctrl, 'left')).toEqual(['layer3', 'layer2', 'layer1']);
+    });
+  });
+
   describe('setActive', () => {
     // Attach the DOM nodes setActive touches, since the control is not added to
     // a real map in these unit tests.

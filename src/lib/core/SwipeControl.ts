@@ -1460,9 +1460,20 @@ export class SwipeControl implements IControl {
           const item = cb.closest<HTMLElement>('.swipe-layer-item');
           if (id && item) itemsById.set(id, item);
         });
+      // Move only the rows that are not already where they belong. Re-appending
+      // every row would relocate each node on every refresh, and a node moved
+      // between mousedown and mouseup never receives a `click`, so on a host
+      // whose map fires `styledata` continuously (deck.gl overlays, streaming
+      // tiles) the checkboxes stop responding entirely. See opengeos/GeoLibre#2347.
+      let expected = layerList.firstElementChild;
       currentLayers.forEach((layer) => {
         const item = itemsById.get(layer.id);
-        if (item) layerList.appendChild(item);
+        if (!item) return;
+        if (item === expected) {
+          expected = item.nextElementSibling;
+        } else {
+          layerList.insertBefore(item, expected);
+        }
       });
     });
   }
