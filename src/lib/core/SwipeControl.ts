@@ -124,6 +124,14 @@ export class SwipeControl implements IControl {
    * arrived or left since, and the sides are applied again.
    */
   private _appliedLayerSignature: string | null = null;
+  /**
+   * Whether the comparison map has fired `load`, after which its style accepts
+   * layers and layout edits. `isStyleLoaded()` cannot stand in for this: both
+   * engines answer `false` there while any source still has tiles loading, so
+   * a pass that lands during that window would skip the pane, with nothing to
+   * retry it once its `load` handler has already run.
+   */
+  private _comparisonMapLoaded = false;
   /** Forgets {@link _appliedLayerSignature} when the map's style is replaced. */
   private _styleLoadHandler: (() => void) | null = null;
   /**
@@ -347,6 +355,7 @@ export class SwipeControl implements IControl {
       }
       this._comparisonMap.remove();
       this._comparisonMap = undefined;
+      this._comparisonMapLoaded = false;
     }
 
     // Remove comparison container
@@ -950,7 +959,9 @@ export class SwipeControl implements IControl {
       : new MapLibreMap(mapOptions as MapOptions);
 
     // Wait for comparison map to load before syncing
+    this._comparisonMapLoaded = false;
     this._comparisonMap.on('load', () => {
+      this._comparisonMapLoaded = true;
       const projection = this._map?.getProjection();
       if (projection) {
         this._comparisonMap?.setProjection(projection);
@@ -1022,7 +1033,10 @@ export class SwipeControl implements IControl {
     });
 
     // Update comparison map: show right layers, hide everything else
-    if (this._comparisonMap && this._comparisonMap.isStyleLoaded()) {
+    if (
+      this._comparisonMap &&
+      (this._comparisonMapLoaded || this._comparisonMap.isStyleLoaded())
+    ) {
       try {
         // Sync any layers from the main map that don't exist on the comparison map
         this._syncLayersToComparisonMap(rightSet);
