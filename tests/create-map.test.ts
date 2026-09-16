@@ -129,3 +129,47 @@ describe('SwipeControl createMap', () => {
     expect(control.getComparisonMap()).toBeUndefined();
   });
 });
+
+describe('SwipeControl basemapLayerIds', () => {
+  it('groups the named layers without fetching a style', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const control = new SwipeControl({
+      showPanel: true,
+      // A `mapbox://` URL has no HTTP form, so a host on Mapbox has ids but no
+      // fetchable style. Both are passed; the ids win.
+      basemapStyle: 'mapbox://styles/mapbox/standard',
+      basemapLayerIds: ['layer1'],
+      createMap: (() => fakeMap()) as unknown as CreateSwipeComparisonMap,
+    });
+    control.onAdd(fakeMap() as never);
+
+    expect(fetchSpy, 'a mapbox:// style must not be fetched').not.toHaveBeenCalled();
+    // layer1 is the basemap, so it is grouped away; layer2 is listed on its own.
+    const ids = control.getLayers().map((layer) => layer.id);
+    expect(ids).toContain('__basemap__');
+    expect(ids).toContain('layer2');
+    expect(ids).not.toContain('layer1');
+
+    control.onRemove();
+    fetchSpy.mockRestore();
+  });
+
+  it('still fetches when only a style URL is given', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ layers: [{ id: 'layer1' }] }),
+      } as Response);
+    const control = new SwipeControl({
+      showPanel: true,
+      basemapStyle: 'https://example.test/style.json',
+      createMap: (() => fakeMap()) as unknown as CreateSwipeComparisonMap,
+    });
+    control.onAdd(fakeMap() as never);
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('https://example.test/style.json'));
+
+    control.onRemove();
+    fetchSpy.mockRestore();
+  });
+});

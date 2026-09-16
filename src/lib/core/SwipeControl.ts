@@ -22,11 +22,12 @@ import type {
 const DEFAULT_OPTIONS: Required<
   Omit<
     SwipeControlOptions,
-    'className' | 'basemapStyle' | 'excludeLayers' | 'layerProvider' | 'createMap'
+    'className' | 'basemapStyle' | 'basemapLayerIds' | 'excludeLayers' | 'layerProvider' | 'createMap'
   >
 > & {
   className: string;
   basemapStyle: string | undefined;
+  basemapLayerIds: string[] | undefined;
   excludeLayers: string[];
   layerProvider: SwipeLayerProvider | undefined;
   createMap: CreateSwipeComparisonMap | undefined;
@@ -44,6 +45,7 @@ const DEFAULT_OPTIONS: Required<
   mousemove: false,
   active: true,
   basemapStyle: undefined,
+  basemapLayerIds: undefined,
   excludeLayers: [],
   selectVisibleByDefault: false,
   closeOnOutsideClick: false,
@@ -88,11 +90,12 @@ export class SwipeControl implements IControl {
   private _options: Required<
     Omit<
       SwipeControlOptions,
-      'className' | 'basemapStyle' | 'excludeLayers' | 'layerProvider'
+      'className' | 'basemapStyle' | 'basemapLayerIds' | 'excludeLayers' | 'layerProvider'
     >
   > & {
     className: string;
     basemapStyle: string | undefined;
+    basemapLayerIds: string[] | undefined;
     excludeLayers: string[];
     layerProvider: SwipeLayerProvider | undefined;
   };
@@ -128,11 +131,12 @@ export class SwipeControl implements IControl {
     this._options = { ...DEFAULT_OPTIONS, ...options } as Required<
       Omit<
         SwipeControlOptions,
-        'className' | 'basemapStyle' | 'excludeLayers' | 'layerProvider'
+        'className' | 'basemapStyle' | 'basemapLayerIds' | 'excludeLayers' | 'layerProvider'
       >
     > & {
       className: string;
       basemapStyle: string | undefined;
+      basemapLayerIds: string[] | undefined;
       excludeLayers: string[];
       layerProvider: SwipeLayerProvider | undefined;
     };
@@ -186,8 +190,16 @@ export class SwipeControl implements IControl {
     this._container = this._createContainer();
     this._slider = this._createSlider();
 
+    // Basemap layer ids handed over directly need no fetch, so the grouped
+    // "Basemap" entry is ready before the panel is built — same as the
+    // post-fetch path below, minus the await.
+    if (this._options.basemapLayerIds) {
+      this._basemapLayerIds = new Set(this._options.basemapLayerIds);
+      this._basemapLoadSettled = true;
+    }
+
     // Load basemap style if provided, then create panel
-    if (this._options.basemapStyle) {
+    if (this._options.basemapStyle && !this._options.basemapLayerIds) {
       this._loadBasemapStyle(this._options.basemapStyle).then(() => {
         // Basemap layer IDs are now known, so the grouped "Basemap" entry is
         // selectable — apply the default selection before building the panel so
@@ -226,8 +238,9 @@ export class SwipeControl implements IControl {
       this._slider?.classList.add('swipe-slider-locked');
     }
 
-    // Initial panel state (only if basemapStyle not provided, otherwise handled above)
-    if (!this._options.basemapStyle && this._panel && !this._state.collapsed) {
+    // Initial panel state (only if the panel was built synchronously above;
+    // the fetch path handles its own)
+    if (this._panel && !this._state.collapsed) {
       this._panel.classList.add('expanded');
       requestAnimationFrame(() => {
         this._updatePanelPosition();
@@ -393,7 +406,11 @@ export class SwipeControl implements IControl {
    * @returns Whether the default selection can safely read the layer list
    */
   private _basemapReady(): boolean {
-    return !this._options.basemapStyle || this._basemapLoadSettled;
+    return (
+      !this._options.basemapStyle ||
+      !!this._options.basemapLayerIds ||
+      this._basemapLoadSettled
+    );
   }
 
   /**
