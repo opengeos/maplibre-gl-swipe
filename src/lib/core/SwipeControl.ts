@@ -117,6 +117,23 @@ export class SwipeControl implements IControl {
   private _syncMoveHandler: (() => void) | null = null;
   private _syncMoveEndHandler: (() => void) | null = null;
   private _styleDataHandler: (() => void) | null = null;
+  /**
+   * The `styledata` listener waiting to build the comparison map, while a mount
+   * landed on a map whose style was not usable yet. Cleared once it has built
+   * the map, or by {@link onRemove}.
+   */
+  private _comparisonMapHandler: (() => void) | null = null;
+  /**
+   * Which mount the control is on, bumped by every mount and every removal.
+   *
+   * A mount defers work — the `styledata` listener above, the `basemapStyle`
+   * fetch — and the control can be removed, or removed and mounted again, before
+   * any of it runs. Those continuations close over `this`, so without a
+   * generation to check against they would carry on against whatever mount is
+   * current: appending a second pane or panel and overwriting `_comparisonMap`,
+   * leaving the map it replaced with nothing to tear it down.
+   */
+  private _mountGeneration = 0;
   private _projectionChangeHandler: (() => void) | null = null;
   private _isSyncing: boolean = false;
   private _pendingDefaultSelection: boolean = false;
@@ -196,6 +213,7 @@ export class SwipeControl implements IControl {
    * @returns The control's container element.
    */
   private _mount(map: MapLibreMap): HTMLElement {
+    const generation = ++this._mountGeneration;
     this._map = map;
     this._mapContainer = map.getContainer();
 
@@ -206,15 +224,24 @@ export class SwipeControl implements IControl {
     if (this._map.isStyleLoaded()) {
       this._createComparisonMap();
     } else {
-      this._map.once('styledata', () => {
+      // `styledata` fires for every style change, not only a finished load, so
+      // the first one can still find nothing to build the pane from. The
+      // listener therefore stays on until it succeeds instead of being consumed
+      // by that first event, which would leave the control with no pane at all.
+      const buildWhenReady = () => {
+        if (generation !== this._mountGeneration) return;
         this._createComparisonMap();
+        if (!this._comparisonMap) return;
+        this._clearComparisonMapHandler();
         this._setupMapSync();
         this._applyDefaultSelectionIfPending();
         this._updateClip();
         this._updateLayerVisibility();
         // When starting inactive, keep the comparison view visible and only
         // lock the slider (handled in the synchronous onAdd path). See #842.
-      });
+      };
+      this._comparisonMapHandler = buildWhenReady;
+      this._map.on('styledata', buildWhenReady);
     }
 
     // Create UI elements
@@ -232,6 +259,9 @@ export class SwipeControl implements IControl {
     // Load basemap style if provided, then create panel
     if (this._options.basemapStyle && !this._options.basemapLayerIds) {
       this._loadBasemapStyle(this._options.basemapStyle).then(() => {
+        // A removal, or a removal and a fresh mount, can land before the fetch
+        // answers; this panel belongs to the mount that asked for it.
+        if (generation !== this._mountGeneration) return;
         // Basemap layer IDs are now known, so the grouped "Basemap" entry is
         // selectable — apply the default selection before building the panel so
         // its checkboxes render in the correct state.
@@ -286,6 +316,9 @@ export class SwipeControl implements IControl {
    * Implements the IControl interface.
    */
   onRemove(): void {
+    // Nothing this mount deferred belongs to the control any more.
+    this._mountGeneration += 1;
+    this._clearComparisonMapHandler();
     // Remove event listeners
     this._removeEventListeners();
     if (this._rafHandle !== null) {
@@ -828,6 +861,13 @@ export class SwipeControl implements IControl {
    * Creates the comparison map that overlays the original map.
    * The comparison map shows the "right" layers and is clipped.
    */
+  /** Take the pending comparison-map listener off the map, if one is waiting. */
+  private _clearComparisonMapHandler(): void {
+    if (!this._comparisonMapHandler) return;
+    this._map?.off('styledata', this._comparisonMapHandler);
+    this._comparisonMapHandler = null;
+  }
+
   private _createComparisonMap(): void {
     if (!this._map || !this._mapContainer) return;
 

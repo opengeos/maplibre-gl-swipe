@@ -69,7 +69,7 @@ function comparisonMap() {
  */
 function loadingMainMap() {
   const container = sizedContainer();
-  const styledata: (() => void)[] = [];
+  const styledata: StyleDataListener[] = [];
   const state = { loaded: false };
   return {
     state,
@@ -96,14 +96,36 @@ function loadingMainMap() {
       isStyleLoaded: () => state.loaded,
       jumpTo: vi.fn(),
       resize: vi.fn(),
-      on: vi.fn(),
-      once: (event: string, handler: () => void) => {
-        if (event === 'styledata') styledata.push(handler);
+      on: (event: string, handler: () => void) => {
+        if (event === 'styledata') styledata.push({ handler, once: false });
       },
-      off: vi.fn(),
+      // Faithful `once`: the listener is gone after the first event, which is
+      // the whole difference these tests turn on.
+      once: (event: string, handler: () => void) => {
+        if (event === 'styledata') styledata.push({ handler, once: true });
+      },
+      off: (event: string, handler: () => void) => {
+        if (event !== 'styledata') return;
+        const index = styledata.findIndex((entry) => entry.handler === handler);
+        if (index > -1) styledata.splice(index, 1);
+      },
       remove: vi.fn(),
     },
   };
+}
+
+/** One registered `styledata` listener and how long it lives. */
+interface StyleDataListener {
+  handler: () => void;
+  once: boolean;
+}
+
+/** Fire every `styledata` listener currently on the map. */
+function fireStyleData(styledata: StyleDataListener[]): void {
+  for (const entry of [...styledata]) {
+    if (entry.once) styledata.splice(styledata.indexOf(entry), 1);
+    entry.handler();
+  }
 }
 
 describe('mounting on a map whose style is still loading', () => {
@@ -128,10 +150,57 @@ describe('mounting on a map whose style is still loading', () => {
     expect(map.getContainer().querySelectorAll('.swipe-clip-container')).toHaveLength(0);
 
     state.loaded = true;
-    expect(styledata).toHaveLength(1);
-    styledata[0]();
+    fireStyleData(styledata);
     expect(control.getComparisonMap()).toBe(pane);
     expect(map.getContainer().querySelectorAll('.swipe-clip-container')).toHaveLength(1);
+
+    control.onRemove();
+  });
+
+  it('keeps waiting when the first styledata still has no style', () => {
+    // `styledata` fires for every style change, not only a finished load. A
+    // one-shot listener was consumed by that first event and the control then
+    // had no pane at all, since nothing else creates one.
+    const { map, state, styledata } = loadingMainMap();
+    const pane = comparisonMap();
+    const control = new SwipeControl({
+      showPanel: false,
+      createMap: (() => pane) as unknown as CreateSwipeComparisonMap,
+    });
+    control.onAdd(map as never);
+
+    fireStyleData(styledata);
+    expect(control.getComparisonMap()).toBeUndefined();
+
+    state.loaded = true;
+    fireStyleData(styledata);
+    expect(control.getComparisonMap()).toBe(pane);
+
+    control.onRemove();
+  });
+
+  it('drops the pending listener when the control is removed and mounted again', () => {
+    // The listener outlived its mount, so a `styledata` after a re-mount built
+    // a second pane and overwrote `_comparisonMap` -- orphaning the first.
+    const { map, state, styledata, container } = loadingMainMap();
+    const panes = [comparisonMap(), comparisonMap()];
+    let built = 0;
+    const control = new SwipeControl({
+      showPanel: false,
+      createMap: (() => panes[built++]) as unknown as CreateSwipeComparisonMap,
+    });
+
+    control.onAdd(map as never);
+    control.onRemove();
+    expect(styledata).toHaveLength(0);
+
+    control.onAdd(map as never);
+    state.loaded = true;
+    fireStyleData(styledata);
+
+    expect(built).toBe(1);
+    expect(control.getComparisonMap()).toBe(panes[0]);
+    expect(container.querySelectorAll('.swipe-comparison-map')).toHaveLength(1);
 
     control.onRemove();
   });
