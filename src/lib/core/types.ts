@@ -87,8 +87,21 @@ export interface SwipeControlOptions {
    * URL of the basemap style JSON. When provided, all layers from this style
    * will be grouped as a single "Basemap" entry in the layer list instead of
    * being listed individually.
+   *
+   * Ignored when {@link basemapLayerIds} is given.
    */
   basemapStyle?: string;
+
+  /**
+   * The basemap's layer ids, for a host that already knows them.
+   *
+   * Same effect as {@link basemapStyle} — those layers are grouped as a single
+   * "Basemap" entry — without the fetch. Use it when the style cannot be
+   * fetched at all: a `mapbox://` URL has no HTTP form, and a style assembled
+   * in memory or behind an authenticated endpoint has no URL to give. Takes
+   * precedence over `basemapStyle`, so passing both is not ambiguous.
+   */
+  basemapLayerIds?: string[];
 
   /**
    * Layer ID patterns to exclude from the layer list.

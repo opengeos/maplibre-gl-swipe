@@ -131,6 +131,7 @@ The main control class that implements MapLibre's `IControl` interface.
 | `visibleLayersOnly` | `boolean`              | `false`         | List only currently visible layers (plus any already selected) in the panel; the lists update live as visibility changes |
 | `layerProvider` | `SwipeLayerProvider` | -             | Contribute layers `map.getStyle()` cannot see (deck.gl / custom layers) and apply each side assignment yourself |
 | `createMap`   | `CreateSwipeComparisonMap` | maplibre-gl's `Map` | Build the clipped comparison map with another Style Spec engine |
+| `basemapLayerIds` | `string[]`             | -               | The basemap's layer ids, when the host already knows them and the style cannot be fetched |
 
 #### Running on Mapbox GL JS
 
@@ -153,6 +154,18 @@ map.addControl(swipe);
 The factory receives the subset of map options both libraries accept
 (`SwipeComparisonMapOptions`: the clipped `container`, the main map's `style`,
 its camera, and `interactive: false` / `attributionControl: false`).
+
+A Mapbox host usually also wants `basemapLayerIds`: `basemapStyle` is fetched to
+work out which layers make up the basemap, and a `mapbox://` style URL has no
+HTTP form to fetch. Pass the ids instead and the grouped "Basemap" entry works
+the same, with no request:
+
+```javascript
+new SwipeControl({
+  createMap: (options) => new mapboxgl.Map(options),
+  basemapLayerIds: basemapLayers.map((layer) => layer.id),
+});
+```
 
 #### Methods
 
