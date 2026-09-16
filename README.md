@@ -129,6 +129,30 @@ The main control class that implements MapLibre's `IControl` interface.
 | `selectVisibleByDefault` | `boolean`         | `false`         | Preselect visible layers (all on the left, basemap on the right) when no `leftLayers`/`rightLayers` are given |
 | `closeOnOutsideClick` | `boolean`            | `false`         | Collapse the panel when clicking outside it (otherwise only the × button does) |
 | `visibleLayersOnly` | `boolean`              | `false`         | List only currently visible layers (plus any already selected) in the panel; the lists update live as visibility changes |
+| `layerProvider` | `SwipeLayerProvider` | -             | Contribute layers `map.getStyle()` cannot see (deck.gl / custom layers) and apply each side assignment yourself |
+| `createMap`   | `CreateSwipeComparisonMap` | maplibre-gl's `Map` | Build the clipped comparison map with another Style Spec engine |
+
+#### Running on Mapbox GL JS
+
+The control reads and writes both maps only through the surface `maplibre-gl`
+and `mapbox-gl` share — `getStyle`, `addSource`, `addLayer`,
+`setLayoutProperty`, `jumpTo`, `resize`, `isStyleLoaded`, `get`/`setProjection`,
+`on`, `remove`. The single engine-specific line is the comparison map it
+constructs, so `createMap` is the whole integration:
+
+```javascript
+import mapboxgl from 'mapbox-gl';
+
+const swipe = new SwipeControl({
+  createMap: (options) => new mapboxgl.Map(options),
+});
+
+map.addControl(swipe);
+```
+
+The factory receives the subset of map options both libraries accept
+(`SwipeComparisonMapOptions`: the clipped `container`, the main map's `style`,
+its camera, and `interactive: false` / `attributionControl: false`).
 
 #### Methods
 

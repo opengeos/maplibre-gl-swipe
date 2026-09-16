@@ -15,6 +15,8 @@ export type {
   SwipeLayerSide,
   SwipeProviderLayer,
   SwipeLayerProvider,
+  SwipeComparisonMapOptions,
+  CreateSwipeComparisonMap,
   LayerInfo,
 } from './lib/core/types';
 

@@ -12,6 +12,8 @@ import type {
   SwipeLayerSide,
   SwipeLayerProvider,
   LayerInfo,
+  CreateSwipeComparisonMap,
+  SwipeComparisonMapOptions,
 } from './types';
 
 /**
@@ -20,13 +22,14 @@ import type {
 const DEFAULT_OPTIONS: Required<
   Omit<
     SwipeControlOptions,
-    'className' | 'basemapStyle' | 'excludeLayers' | 'layerProvider'
+    'className' | 'basemapStyle' | 'excludeLayers' | 'layerProvider' | 'createMap'
   >
 > & {
   className: string;
   basemapStyle: string | undefined;
   excludeLayers: string[];
   layerProvider: SwipeLayerProvider | undefined;
+  createMap: CreateSwipeComparisonMap | undefined;
 } = {
   orientation: 'vertical',
   position: 50,
@@ -46,6 +49,7 @@ const DEFAULT_OPTIONS: Required<
   closeOnOutsideClick: false,
   visibleLayersOnly: false,
   layerProvider: undefined,
+  createMap: undefined,
 };
 
 /**
@@ -801,8 +805,10 @@ export class SwipeControl implements IControl {
       return;
     }
 
-    // Create comparison map with the same style
-    const mapOptions: MapOptions = {
+    // Create comparison map with the same style. Only the subset of MapOptions
+    // both Style Spec engines accept, so `createMap` can build it with the
+    // host's own engine (mapbox-gl) instead of maplibre-gl.
+    const mapOptions: SwipeComparisonMapOptions = {
       container: this._comparisonContainer,
       style: currentStyle,
       center: center,
@@ -813,7 +819,9 @@ export class SwipeControl implements IControl {
       attributionControl: false,
     };
 
-    this._comparisonMap = new MapLibreMap(mapOptions);
+    this._comparisonMap = this._options.createMap
+      ? this._options.createMap(mapOptions)
+      : new MapLibreMap(mapOptions as MapOptions);
 
     // Wait for comparison map to load before syncing
     this._comparisonMap.on('load', () => {
