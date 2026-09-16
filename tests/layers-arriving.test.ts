@@ -41,10 +41,16 @@ function styleMap(initial: StyleLayer[]) {
   const layers = initial.map((layer) => ({ ...layer, layout: { ...layer.layout } }));
   const styledata = new Set<() => void>();
   const styleLoad = new Set<() => void>();
+  const load = new Set<() => void>();
+  /** What `isStyleLoaded()` answers; false while a source has tiles in flight. */
+  const status = { styleLoaded: true };
   const fire = () => [...styledata].forEach((handler) => handler());
   const map = {
     layers,
     fire,
+    status,
+    /** Fire the map's one-off `load`. */
+    fireLoad: () => [...load].forEach((handler) => handler()),
     /** Swap in a new style whose layers carry their own visibility. */
     replaceStyle: (next: StyleLayer[]) => {
       const fresh = next.map((layer) => ({ ...layer, layout: { ...layer.layout } }));
@@ -77,12 +83,13 @@ function styleMap(initial: StyleLayer[]) {
       layers.push({ ...spec, layout: { ...spec.layout } });
       fire();
     },
-    isStyleLoaded: () => true,
+    isStyleLoaded: () => status.styleLoaded,
     jumpTo: vi.fn(),
     resize: vi.fn(),
     on: (event: string, handler: () => void) => {
       if (event === 'styledata') styledata.add(handler);
       if (event === 'style.load') styleLoad.add(handler);
+      if (event === 'load') load.add(handler);
     },
     once: vi.fn(),
     off: (event: string, handler: () => void) => {
@@ -121,6 +128,31 @@ describe('side-assigned layers that reach the map after the control mounts', () 
     expect(visibility(main, 'east')).toBe('none');
     expect(visibility(pane, 'east')).toBe('visible');
     expect(visibility(pane, 'west')).toBe('absent');
+
+    control.onRemove();
+  });
+
+  it('reaches a loaded pane that is still fetching tiles', () => {
+    // The pane has fired `load`, but a source of its own is loading tiles, so
+    // `isStyleLoaded()` answers false the moment the host's layers arrive. The
+    // pass used to skip the pane then, and its `load` handler had already run,
+    // so the right layer never reached it.
+    const basemap = { id: 'basemap', type: 'raster', source: 'basemap' };
+    const main = styleMap([basemap]);
+    const pane = styleMap([basemap]);
+    const control = new SwipeControl({
+      showPanel: false,
+      rightLayers: ['east'],
+      createMap: (() => pane) as unknown as CreateSwipeComparisonMap,
+    });
+    control.onAdd(main as never);
+    pane.status.styleLoaded = false;
+    pane.fireLoad();
+
+    main.addLayer({ id: 'east', type: 'fill', source: 'data' });
+
+    expect(visibility(main, 'east')).toBe('none');
+    expect(visibility(pane, 'east')).toBe('visible');
 
     control.onRemove();
   });
