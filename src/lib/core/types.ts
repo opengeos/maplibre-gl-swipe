@@ -140,7 +140,51 @@ export interface SwipeControlOptions {
    * compatible: without it the control behaves exactly as before.
    */
   layerProvider?: SwipeLayerProvider;
+
+  /**
+   * Build the comparison map the control clips to the swipe region.
+   *
+   * Defaults to `new maplibregl.Map(options)`. Supply a factory to build it
+   * with another Style Spec engine: the control reads and writes the comparison
+   * map only through the surface `maplibre-gl` and `mapbox-gl` share
+   * (`getStyle`, `addSource`, `addLayer`, `setLayoutProperty`, `jumpTo`,
+   * `resize`, `isStyleLoaded`, `get`/`setProjection`, `on`, `remove`), so a
+   * host rendering with Mapbox GL JS passes
+   * `(options) => new mapboxgl.Map(options)` here and the swipe works unchanged.
+   *
+   * The options handed to the factory are the subset both libraries accept, and
+   * the returned map is presented through MapLibre's types — an honest cast for
+   * the members above, which is the same trade the control already makes when a
+   * host hands it a map through `onAdd`.
+   */
+  createMap?: CreateSwipeComparisonMap;
 }
+
+/**
+ * The map options {@link CreateSwipeComparisonMap} is called with: the subset
+ * of `MapOptions` that `maplibre-gl` and `mapbox-gl` both accept with the same
+ * meaning.
+ */
+export interface SwipeComparisonMapOptions {
+  /** The clipped container the comparison map paints into. */
+  container: HTMLElement;
+  /** The main map's current style, as `getStyle()` returned it. */
+  style: NonNullable<ReturnType<Map['getStyle']>>;
+  center: ReturnType<Map['getCenter']>;
+  zoom: number;
+  bearing: number;
+  pitch: number;
+  /** Always `false`: the comparison map is driven from the main map. */
+  interactive: false;
+  /** Always `false`: the main map already carries the attribution. */
+  attributionControl: false;
+}
+
+/**
+ * Factory for {@link SwipeControlOptions.createMap}. Returns the new map
+ * through MapLibre's types; see that option for why the cast is honest.
+ */
+export type CreateSwipeComparisonMap = (options: SwipeComparisonMapOptions) => Map;
 
 /**
  * Which side(s) of the swipe a provider layer should render on, resolved from
