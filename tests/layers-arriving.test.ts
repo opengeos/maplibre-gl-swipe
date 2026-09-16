@@ -40,10 +40,18 @@ function sizedContainer(): HTMLElement {
 function styleMap(initial: StyleLayer[]) {
   const layers = initial.map((layer) => ({ ...layer, layout: { ...layer.layout } }));
   const styledata = new Set<() => void>();
+  const styleLoad = new Set<() => void>();
   const fire = () => [...styledata].forEach((handler) => handler());
   const map = {
     layers,
     fire,
+    /** Swap in a new style whose layers carry their own visibility. */
+    replaceStyle: (next: StyleLayer[]) => {
+      const fresh = next.map((layer) => ({ ...layer, layout: { ...layer.layout } }));
+      layers.splice(0, layers.length, ...fresh);
+      [...styleLoad].forEach((handler) => handler());
+      fire();
+    },
     getContainer: () => sizedContainer(),
     getCanvas: () => document.createElement('canvas'),
     getStyle: () => ({
@@ -74,10 +82,12 @@ function styleMap(initial: StyleLayer[]) {
     resize: vi.fn(),
     on: (event: string, handler: () => void) => {
       if (event === 'styledata') styledata.add(handler);
+      if (event === 'style.load') styleLoad.add(handler);
     },
     once: vi.fn(),
     off: (event: string, handler: () => void) => {
       if (event === 'styledata') styledata.delete(handler);
+      if (event === 'style.load') styleLoad.delete(handler);
     },
     remove: vi.fn(),
   };
@@ -111,6 +121,30 @@ describe('side-assigned layers that reach the map after the control mounts', () 
     expect(visibility(main, 'east')).toBe('none');
     expect(visibility(pane, 'east')).toBe('visible');
     expect(visibility(pane, 'west')).toBe('absent');
+
+    control.onRemove();
+  });
+
+  it('applies the sides again when a replaced style keeps the same layer ids', () => {
+    // Same ids before and after, so only the style replacement itself can say
+    // the new layers came back with their style's own visibility.
+    const layers = [
+      { id: 'west', type: 'fill', source: 'data' },
+      { id: 'east', type: 'fill', source: 'data' },
+    ];
+    const main = styleMap(layers);
+    const pane = styleMap([]);
+    const control = new SwipeControl({
+      showPanel: false,
+      leftLayers: ['west'],
+      rightLayers: ['east'],
+      createMap: (() => pane) as unknown as CreateSwipeComparisonMap,
+    });
+    control.onAdd(main as never);
+    expect(visibility(main, 'east')).toBe('none');
+
+    main.replaceStyle(layers);
+    expect(visibility(main, 'east')).toBe('none');
 
     control.onRemove();
   });

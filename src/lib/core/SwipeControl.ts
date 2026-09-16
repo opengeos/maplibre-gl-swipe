@@ -124,6 +124,8 @@ export class SwipeControl implements IControl {
    * arrived or left since, and the sides are applied again.
    */
   private _appliedLayerSignature: string | null = null;
+  /** Forgets {@link _appliedLayerSignature} when the map's style is replaced. */
+  private _styleLoadHandler: (() => void) | null = null;
   /**
    * The `styledata` listener waiting to build the comparison map, while a mount
    * landed on a map whose style was not usable yet. Cleared once it has built
@@ -1113,8 +1115,9 @@ export class SwipeControl implements IControl {
    * runs then matches nothing, and nothing else would run another, so a
    * right-side layer came back drawn on the main map and never reached the
    * comparison pane (opengeos/GeoLibre#2434). Only a change in which assigned
-   * layers exist triggers a pass, so a host's own visibility edits, which fire
-   * `styledata` too, are left alone.
+   * layers exist, or a replaced style (`style.load` forgets the signature),
+   * triggers a pass, so a host's own visibility edits, which fire `styledata`
+   * too, are left alone.
    */
   private _reapplySidesIfLayersChanged(): void {
     const style = this._styleOf(this._map);
@@ -1790,6 +1793,14 @@ export class SwipeControl implements IControl {
       this._reapplySidesIfLayersChanged();
     };
     this._map?.on('styledata', this._styleDataHandler);
+    // A replaced style can bring back layers under the same ids with their
+    // style's own visibility, which the signature alone cannot tell apart from
+    // a visibility edit. Forgetting it makes the next `styledata` apply the
+    // sides once more.
+    this._styleLoadHandler = () => {
+      this._appliedLayerSignature = null;
+    };
+    this._map?.on('style.load', this._styleLoadHandler);
 
     // Mousemove option
     if (this._options.mousemove && this._mapContainer) {
@@ -1871,6 +1882,10 @@ export class SwipeControl implements IControl {
     if (this._styleDataHandler && this._map) {
       this._map.off('styledata', this._styleDataHandler);
       this._styleDataHandler = null;
+    }
+    if (this._styleLoadHandler && this._map) {
+      this._map.off('style.load', this._styleLoadHandler);
+      this._styleLoadHandler = null;
     }
     if (this._projectionChangeHandler && this._map) {
       this._map.off('projectiontransition', this._projectionChangeHandler);
