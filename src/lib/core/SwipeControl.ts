@@ -118,6 +118,13 @@ export class SwipeControl implements IControl {
   private _syncMoveEndHandler: (() => void) | null = null;
   private _styleDataHandler: (() => void) | null = null;
   /**
+   * The side-assigned layer ids the last visibility pass found on the main
+   * map, in style order, or `null` before any pass has read a style. A
+   * `styledata` whose style yields a different answer means assigned layers
+   * arrived or left since, and the sides are applied again.
+   */
+  private _appliedLayerSignature: string | null = null;
+  /**
    * The `styledata` listener waiting to build the comparison map, while a mount
    * landed on a map whose style was not usable yet. Cleared once it has built
    * the map, or by {@link onRemove}.
@@ -318,6 +325,7 @@ export class SwipeControl implements IControl {
   onRemove(): void {
     // Nothing this mount deferred belongs to the control any more.
     this._mountGeneration += 1;
+    this._appliedLayerSignature = null;
     this._clearComparisonMapHandler();
     // Remove event listeners
     this._removeEventListeners();
@@ -974,6 +982,7 @@ export class SwipeControl implements IControl {
 
     const style = this._styleOf(this._map);
     if (!style || !style.layers) return;
+    this._appliedLayerSignature = this._assignedLayerSignature(style.layers);
 
     // Update main map: show left layers, hide right-only layers,
     // restore original visibility for layers not in either list
@@ -1073,6 +1082,45 @@ export class SwipeControl implements IControl {
         }
       }
     }
+  }
+
+  /**
+   * The ids of the main map's style layers that either side is assigned, in
+   * style order, joined into one comparable string.
+   *
+   * @param layers - The main map's current style layers.
+   * @returns The signature {@link _appliedLayerSignature} is compared against.
+   */
+  private _assignedLayerSignature(layers: ReadonlyArray<{ id: string }>): string {
+    const assigned = new Set(
+      [...this._state.leftLayers, ...this._state.rightLayers].flatMap((id) =>
+        this._getActualLayerIds(id)
+      )
+    );
+    return layers
+      .filter((layer) => assigned.has(layer.id))
+      .map((layer) => layer.id)
+      .join('\n');
+  }
+
+  /**
+   * Apply the sides again when layers they are assigned have been added to or
+   * removed from the main map since the last pass.
+   *
+   * A host can mount the control, or swap the style under it, before its own
+   * layers are on the map: an engine that rebuilds its layers after
+   * `style.load` re-adds them one `addLayer` at a time. The pass the mount
+   * runs then matches nothing, and nothing else would run another, so a
+   * right-side layer came back drawn on the main map and never reached the
+   * comparison pane (opengeos/GeoLibre#2434). Only a change in which assigned
+   * layers exist triggers a pass, so a host's own visibility edits, which fire
+   * `styledata` too, are left alone.
+   */
+  private _reapplySidesIfLayersChanged(): void {
+    const style = this._styleOf(this._map);
+    if (!style || !style.layers) return;
+    if (this._assignedLayerSignature(style.layers) === this._appliedLayerSignature) return;
+    this._updateLayerVisibility();
   }
 
   /**
@@ -1739,6 +1787,7 @@ export class SwipeControl implements IControl {
       // afterwards).
       this._applyDefaultSelectionIfPending();
       this._refreshLayerList();
+      this._reapplySidesIfLayersChanged();
     };
     this._map?.on('styledata', this._styleDataHandler);
 
