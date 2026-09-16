@@ -117,6 +117,23 @@ export class SwipeControl implements IControl {
   private _syncMoveHandler: (() => void) | null = null;
   private _syncMoveEndHandler: (() => void) | null = null;
   private _styleDataHandler: (() => void) | null = null;
+  /**
+   * The `styledata` listener waiting to build the comparison map, while a mount
+   * landed on a map whose style was not usable yet. Cleared once it has built
+   * the map, or by {@link onRemove}.
+   */
+  private _comparisonMapHandler: (() => void) | null = null;
+  /**
+   * Which mount the control is on, bumped by every mount and every removal.
+   *
+   * A mount defers work — the `styledata` listener above, the `basemapStyle`
+   * fetch — and the control can be removed, or removed and mounted again, before
+   * any of it runs. Those continuations close over `this`, so without a
+   * generation to check against they would carry on against whatever mount is
+   * current: appending a second pane or panel and overwriting `_comparisonMap`,
+   * leaving the map it replaced with nothing to tear it down.
+   */
+  private _mountGeneration = 0;
   private _projectionChangeHandler: (() => void) | null = null;
   private _isSyncing: boolean = false;
   private _pendingDefaultSelection: boolean = false;
@@ -168,12 +185,35 @@ export class SwipeControl implements IControl {
     // A control can be mounted twice without an `onRemove` in between: a host
     // that repositions it removes and re-adds the same instance, and some map
     // engines re-add plugin controls of their own accord after a style change.
-    // Everything below overwrites the element references, so whatever the
+    // The mount below overwrites the element references, so whatever the
     // previous mount left in the map container — the slider, the clipped pane,
     // and the comparison map inside it, a live WebGL context — would be
     // orphaned there with nothing holding a reference to tear it down.
     if (this._mapContainer) this.onRemove();
 
+    // A mount that throws part-way has already put things on the map: the
+    // clipped pane and its comparison map (a live WebGL context), the slider,
+    // the panel. The host never receives an element for a mount that threw, so
+    // it has nothing to call `onRemove` on and all of that would stay on the
+    // map forever. Tear down whatever got that far, then let the throw out.
+    try {
+      return this._mount(map);
+    } catch (error) {
+      this.onRemove();
+      throw error;
+    }
+  }
+
+  /**
+   * Build this control's DOM on `map` and return its container element.
+   *
+   * Split out of {@link onAdd} so a partial mount can be unwound there.
+   *
+   * @param map - The map this control is being added to.
+   * @returns The control's container element.
+   */
+  private _mount(map: MapLibreMap): HTMLElement {
+    const generation = ++this._mountGeneration;
     this._map = map;
     this._mapContainer = map.getContainer();
 
@@ -184,15 +224,24 @@ export class SwipeControl implements IControl {
     if (this._map.isStyleLoaded()) {
       this._createComparisonMap();
     } else {
-      this._map.once('styledata', () => {
+      // `styledata` fires for every style change, not only a finished load, so
+      // the first one can still find nothing to build the pane from. The
+      // listener therefore stays on until it succeeds instead of being consumed
+      // by that first event, which would leave the control with no pane at all.
+      const buildWhenReady = () => {
+        if (generation !== this._mountGeneration) return;
         this._createComparisonMap();
+        if (!this._comparisonMap) return;
+        this._clearComparisonMapHandler();
         this._setupMapSync();
         this._applyDefaultSelectionIfPending();
         this._updateClip();
         this._updateLayerVisibility();
         // When starting inactive, keep the comparison view visible and only
         // lock the slider (handled in the synchronous onAdd path). See #842.
-      });
+      };
+      this._comparisonMapHandler = buildWhenReady;
+      this._map.on('styledata', buildWhenReady);
     }
 
     // Create UI elements
@@ -210,6 +259,9 @@ export class SwipeControl implements IControl {
     // Load basemap style if provided, then create panel
     if (this._options.basemapStyle && !this._options.basemapLayerIds) {
       this._loadBasemapStyle(this._options.basemapStyle).then(() => {
+        // A removal, or a removal and a fresh mount, can land before the fetch
+        // answers; this panel belongs to the mount that asked for it.
+        if (generation !== this._mountGeneration) return;
         // Basemap layer IDs are now known, so the grouped "Basemap" entry is
         // selectable — apply the default selection before building the panel so
         // its checkboxes render in the correct state.
@@ -264,6 +316,9 @@ export class SwipeControl implements IControl {
    * Implements the IControl interface.
    */
   onRemove(): void {
+    // Nothing this mount deferred belongs to the control any more.
+    this._mountGeneration += 1;
+    this._clearComparisonMapHandler();
     // Remove event listeners
     this._removeEventListeners();
     if (this._rafHandle !== null) {
@@ -491,10 +546,37 @@ export class SwipeControl implements IControl {
     return false;
   }
 
+  /**
+   * A map's style, or `undefined` while it is still loading.
+   *
+   * MapLibre's `getStyle()` answers `undefined` until the style has loaded;
+   * mapbox-gl's throws `Style is not done loading` instead. Both engines reach
+   * this control through the same `IControl` surface, and a host that swaps the
+   * basemap re-mounts it while `setStyle` is still in flight: every read below
+   * was written against MapLibre's contract, so on a Mapbox host that throw
+   * escaped halfway through `onAdd`, leaving the clipped pane and its live
+   * comparison map on the map with nothing holding a reference to them
+   * (opengeos/GeoLibre#2430).
+   *
+   * Reading the style through here gives both engines the one contract:
+   * nothing to work with yet, try again on the next `styledata`.
+   *
+   * @param map - The map to read, if there is one.
+   * @returns The style, or `undefined` when it is unavailable.
+   */
+  private _styleOf(map: MapLibreMap | undefined): ReturnType<MapLibreMap['getStyle']> | undefined {
+    if (!map) return undefined;
+    try {
+      return map.getStyle();
+    } catch {
+      return undefined;
+    }
+  }
+
   getLayers(): LayerInfo[] {
     if (!this._map) return [];
 
-    const style = this._map.getStyle();
+    const style = this._styleOf(this._map);
     if (!style || !style.layers) return [];
 
     const layers: LayerInfo[] = [];
@@ -779,8 +861,29 @@ export class SwipeControl implements IControl {
    * Creates the comparison map that overlays the original map.
    * The comparison map shows the "right" layers and is clipped.
    */
+  /** Take the pending comparison-map listener off the map, if one is waiting. */
+  private _clearComparisonMapHandler(): void {
+    if (!this._comparisonMapHandler) return;
+    this._map?.off('styledata', this._comparisonMapHandler);
+    this._comparisonMapHandler = null;
+  }
+
   private _createComparisonMap(): void {
     if (!this._map || !this._mapContainer) return;
+
+    // Read the map's configuration before building anything. Without a style
+    // there is no comparison map to build, and a clip container appended ahead
+    // of that check would stay on the map with nothing inside it -- and nothing
+    // to tear it down, since the caller has no pane to remove.
+    const currentStyle = this._styleOf(this._map);
+    if (!currentStyle) {
+      console.warn('SwipeControl: No map style found, comparison map not created');
+      return;
+    }
+    const center = this._map.getCenter();
+    const zoom = this._map.getZoom();
+    const bearing = this._map.getBearing();
+    const pitch = this._map.getPitch();
 
     // Create clip container that will hold the comparison map
     this._clipContainer = document.createElement('div');
@@ -817,19 +920,6 @@ export class SwipeControl implements IControl {
     // over this overlay and hide the "right" layers entirely. The slider and
     // panel sit at much higher z-indexes, so they stay above the overlay.
     this._clipContainer.style.zIndex = String(this._getOverlayZIndex());
-
-    // Get the current map's configuration
-    const currentStyle = this._map.getStyle();
-    const center = this._map.getCenter();
-    const zoom = this._map.getZoom();
-    const bearing = this._map.getBearing();
-    const pitch = this._map.getPitch();
-
-    // Only create comparison map if there's a valid style
-    if (!currentStyle) {
-      console.warn('SwipeControl: No map style found, comparison map not created');
-      return;
-    }
 
     // Create comparison map with the same style. Only the subset of MapOptions
     // both Style Spec engines accept, so `createMap` can build it with the
@@ -882,7 +972,7 @@ export class SwipeControl implements IControl {
     const leftSet = expandLayers(this._state.leftLayers);
     const rightSet = expandLayers(this._state.rightLayers);
 
-    const style = this._map.getStyle();
+    const style = this._styleOf(this._map);
     if (!style || !style.layers) return;
 
     // Update main map: show left layers, hide right-only layers,
@@ -926,7 +1016,7 @@ export class SwipeControl implements IControl {
         // Sync any layers from the main map that don't exist on the comparison map
         this._syncLayersToComparisonMap(rightSet);
 
-        const compStyle = this._comparisonMap.getStyle();
+        const compStyle = this._styleOf(this._comparisonMap);
         if (compStyle && compStyle.layers) {
           compStyle.layers.forEach((layer) => {
             const isRight = rightSet.has(layer.id);
@@ -994,10 +1084,10 @@ export class SwipeControl implements IControl {
   private _syncLayersToComparisonMap(rightSet: Set<string>): void {
     if (!this._map || !this._comparisonMap) return;
 
-    const mainStyle = this._map.getStyle();
+    const mainStyle = this._styleOf(this._map);
     if (!mainStyle || !mainStyle.layers) return;
 
-    const compStyle = this._comparisonMap.getStyle();
+    const compStyle = this._styleOf(this._comparisonMap);
     const existingCompLayerIds = new Set(
       compStyle?.layers?.map((l) => l.id) || []
     );
