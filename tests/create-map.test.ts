@@ -173,3 +173,46 @@ describe('SwipeControl basemapLayerIds', () => {
     fetchSpy.mockRestore();
   });
 });
+
+describe('SwipeControl remount', () => {
+  it('tears the previous mount down instead of orphaning it in the container', () => {
+    // A host that repositions a control removes and re-adds the *same*
+    // instance, and some engines re-add plugin controls after a style change.
+    // Every element reference below is overwritten by onAdd, so a leftover
+    // slider or clipped pane — with a live comparison map inside it — would sit
+    // in the map container with nothing able to remove it.
+    const comparisons: ReturnType<typeof fakeMap>[] = [];
+    const control = new SwipeControl({
+      showPanel: true,
+      createMap: (() => {
+        const map = fakeMap();
+        comparisons.push(map);
+        return map;
+      }) as unknown as CreateSwipeComparisonMap,
+    });
+
+    const host = fakeMap();
+    const container = host.getContainer();
+    control.onAdd(host as never);
+    expect(container.querySelectorAll('.swipe-clip-container')).toHaveLength(1);
+    expect(container.querySelectorAll('.swipe-slider')).toHaveLength(1);
+
+    control.onAdd(host as never);
+    expect(container.querySelectorAll('.swipe-clip-container')).toHaveLength(1);
+    expect(container.querySelectorAll('.swipe-slider')).toHaveLength(1);
+    // And the first comparison map was actually destroyed, not just detached.
+    expect(comparisons).toHaveLength(2);
+    expect(comparisons[0].remove).toHaveBeenCalled();
+
+    control.onRemove();
+    expect(container.querySelectorAll('.swipe-clip-container')).toHaveLength(0);
+  });
+
+  it('still mounts cleanly the first time', () => {
+    const control = new SwipeControl({ showPanel: false });
+    const host = fakeMap();
+    const element = control.onAdd(host as never);
+    expect(element.className).toContain('swipe-control');
+    control.onRemove();
+  });
+});

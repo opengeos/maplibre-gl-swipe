@@ -165,6 +165,15 @@ export class SwipeControl implements IControl {
    * @returns The control's container element
    */
   onAdd(map: MapLibreMap): HTMLElement {
+    // A control can be mounted twice without an `onRemove` in between: a host
+    // that repositions it removes and re-adds the same instance, and some map
+    // engines re-add plugin controls of their own accord after a style change.
+    // Everything below overwrites the element references, so whatever the
+    // previous mount left in the map container — the slider, the clipped pane,
+    // and the comparison map inside it, a live WebGL context — would be
+    // orphaned there with nothing holding a reference to tear it down.
+    if (this._mapContainer) this.onRemove();
+
     this._map = map;
     this._mapContainer = map.getContainer();
 
