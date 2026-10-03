@@ -237,8 +237,13 @@ export class SwipeControl implements IControl {
     // Get initial bounds first (needed for slider positioning)
     this._updateBounds();
 
-    // Create the comparison map overlay (deferred if style not yet loaded)
-    if (this._map.isStyleLoaded()) {
+    // Create the comparison map overlay as soon as the style is readable, and
+    // defer it only while it is not. `isStyleLoaded()` is no gate for this: both
+    // engines answer `false` while any source still has tiles in flight, and
+    // those loads fire `sourcedata`, not `styledata`, so a mount landing then
+    // (mid-pan, or right after the host resized the map) waited for an
+    // unrelated style edit before showing the pane.
+    if (this._styleOf(this._map)) {
       this._createComparisonMap();
     } else {
       // `styledata` fires for every style change, not only a finished load, so
