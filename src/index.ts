@@ -12,6 +12,7 @@ export type {
   SwipeControlEventHandler,
   SwipeControlEventData,
   SwipeOrientation,
+  SwipeTheme,
   SwipeLayerSide,
   SwipeProviderLayer,
   SwipeLayerProvider,
