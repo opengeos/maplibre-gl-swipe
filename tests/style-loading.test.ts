@@ -157,6 +157,27 @@ describe('mounting on a map whose style is still loading', () => {
     control.onRemove();
   });
 
+  it('builds the pane at once when only tiles are still loading', () => {
+    // Both engines answer `isStyleLoaded()` false while any source has tiles in
+    // flight, even with the style itself readable, and those loads fire
+    // `sourcedata`, not `styledata`. Gating on it left a mount that landed
+    // mid-pan, or just after the host resized the map, without a pane until
+    // some unrelated style edit.
+    const { map, state } = loadingMainMap();
+    map.getStyle = () => STYLE;
+    const pane = comparisonMap();
+    const control = new SwipeControl({
+      showPanel: false,
+      createMap: (() => pane) as unknown as CreateSwipeComparisonMap,
+    });
+
+    control.onAdd(map as never);
+    expect(state.loaded).toBe(false);
+    expect(control.getComparisonMap()).toBe(pane);
+
+    control.onRemove();
+  });
+
   it('keeps waiting when the first styledata still has no style', () => {
     // `styledata` fires for every style change, not only a finished load. A
     // one-shot listener was consumed by that first event and the control then
