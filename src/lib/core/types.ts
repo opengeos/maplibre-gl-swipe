@@ -6,6 +6,13 @@ import type { Map } from 'maplibre-gl';
 export type SwipeOrientation = 'vertical' | 'horizontal';
 
 /**
+ * Color scheme of the control's button and panel.
+ * - 'auto': follow the system `prefers-color-scheme`
+ * - 'light' / 'dark': force that scheme
+ */
+export type SwipeTheme = 'auto' | 'light' | 'dark';
+
+/**
  * Options for configuring the SwipeControl
  */
 export interface SwipeControlOptions {
@@ -128,6 +135,14 @@ export interface SwipeControlOptions {
    * @default false
    */
   closeOnOutsideClick?: boolean;
+
+  /**
+   * Color scheme of the button and panel. `'auto'` follows the system
+   * `prefers-color-scheme`; `'light'` or `'dark'` forces one, e.g. to match a
+   * host app's own theme toggle. Change it later with `setTheme()`.
+   * @default 'auto'
+   */
+  theme?: SwipeTheme;
 
   /**
    * When `true`, the panel's left/right layer lists only show layers that are

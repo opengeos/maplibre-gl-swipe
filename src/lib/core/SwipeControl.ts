@@ -9,6 +9,7 @@ import type {
   SwipeControlEventHandler,
   SwipeControlEventData,
   SwipeOrientation,
+  SwipeTheme,
   SwipeLayerSide,
   SwipeLayerProvider,
   LayerInfo,
@@ -49,6 +50,7 @@ const DEFAULT_OPTIONS: Required<
   excludeLayers: [],
   selectVisibleByDefault: false,
   closeOnOutsideClick: false,
+  theme: 'auto',
   visibleLayersOnly: false,
   layerProvider: undefined,
   createMap: undefined,
@@ -440,6 +442,38 @@ export class SwipeControl implements IControl {
     this._updateLayerCheckboxes();
     this._emit('layerchange');
     this._emit('statechange');
+  }
+
+  /**
+   * Gets the color scheme the button and panel are set to.
+   *
+   * @returns The current theme
+   */
+  getTheme(): SwipeTheme {
+    return this._options.theme;
+  }
+
+  /**
+   * Sets the color scheme of the button and panel.
+   *
+   * @param theme - 'auto' to follow `prefers-color-scheme`, or 'light' / 'dark'
+   */
+  setTheme(theme: SwipeTheme): void {
+    if (theme === this._options.theme) return;
+    this._options.theme = theme;
+    this._applyTheme(this._container);
+    this._applyTheme(this._panel);
+  }
+
+  /**
+   * Mark an element with the forced theme class, or none for 'auto'.
+   *
+   * @param element - The button container or the panel, if built
+   */
+  private _applyTheme(element: HTMLElement | undefined): void {
+    if (!element) return;
+    element.classList.toggle('swipe-theme-light', this._options.theme === 'light');
+    element.classList.toggle('swipe-theme-dark', this._options.theme === 'dark');
   }
 
   /**
@@ -1313,6 +1347,7 @@ export class SwipeControl implements IControl {
     container.className = `maplibregl-ctrl maplibregl-ctrl-group swipe-control${
       this._options.className ? ` ${this._options.className}` : ''
     }`;
+    this._applyTheme(container);
 
     const toggleBtn = document.createElement('button');
     toggleBtn.className = 'swipe-control-toggle';
@@ -1374,6 +1409,7 @@ export class SwipeControl implements IControl {
   private _createPanel(): HTMLElement {
     const panel = document.createElement('div');
     panel.className = 'swipe-control-panel';
+    this._applyTheme(panel);
     panel.style.width = `${this._options.panelWidth}px`;
     panel.style.maxHeight = `${this._options.maxHeight}px`;
 

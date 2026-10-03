@@ -128,6 +128,7 @@ The main control class that implements MapLibre's `IControl` interface.
 | `maxHeight`   | `number`                     | `500`           | Max panel height (px); the panel also shrinks to fit the available map height |
 | `selectVisibleByDefault` | `boolean`         | `false`         | Preselect visible layers (all on the left, basemap on the right) when no `leftLayers`/`rightLayers` are given |
 | `closeOnOutsideClick` | `boolean`            | `false`         | Collapse the panel when clicking outside it (otherwise only the × button does) |
+| `theme`               | `'auto' \| 'light' \| 'dark'` | `'auto'`        | Color scheme of the button and panel; `'auto'` follows `prefers-color-scheme` |
 | `visibleLayersOnly` | `boolean`              | `false`         | List only currently visible layers (plus any already selected) in the panel; the lists update live as visibility changes |
 | `layerProvider` | `SwipeLayerProvider` | -             | Contribute layers `map.getStyle()` cannot see (deck.gl / custom layers) and apply each side assignment yourself |
 | `createMap`   | `CreateSwipeComparisonMap` | maplibre-gl's `Map` | Build the clipped comparison map with another Style Spec engine |
@@ -177,6 +178,8 @@ new SwipeControl({
 | `setLeftLayers(layerIds)`     | Sets left/top side layers               |
 | `setRightLayers(layerIds)`    | Sets right/bottom side layers           |
 | `setOrientation(orientation)` | Sets slider orientation                 |
+| `setTheme(theme)`            | Sets the button and panel color scheme  |
+| `getTheme()`                 | Gets the button and panel color scheme  |
 | `setActive(active)`           | Activates or deactivates the swipe tool |
 | `isActive()`                  | Returns whether the swipe tool is active |
 | `getLayers()`                 | Returns all map layers info             |

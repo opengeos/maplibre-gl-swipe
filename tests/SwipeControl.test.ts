@@ -398,6 +398,54 @@ describe('SwipeControl', () => {
     });
   });
 
+  describe('theme', () => {
+    /** Build the button and panel the way onAdd does, without a map. */
+    function build(themed: SwipeControl): { container: HTMLElement; panel: HTMLElement } {
+      const internals = themed as unknown as {
+        _container: HTMLElement;
+        _panel: HTMLElement;
+        _createContainer: () => HTMLElement;
+        _createPanel: () => HTMLElement;
+      };
+      internals._container = internals._createContainer();
+      internals._panel = internals._createPanel();
+      return { container: internals._container, panel: internals._panel };
+    }
+
+    it('follows the system scheme by default', () => {
+      const { container, panel } = build(new SwipeControl());
+      expect(new SwipeControl().getTheme()).toBe('auto');
+      for (const element of [container, panel]) {
+        expect(element.classList.contains('swipe-theme-light')).toBe(false);
+        expect(element.classList.contains('swipe-theme-dark')).toBe(false);
+      }
+    });
+
+    it('forces the scheme given as an option on the button and the panel', () => {
+      const { container, panel } = build(new SwipeControl({ theme: 'dark' }));
+      expect(container.classList.contains('swipe-theme-dark')).toBe(true);
+      expect(panel.classList.contains('swipe-theme-dark')).toBe(true);
+    });
+
+    it('switches the scheme at runtime with setTheme', () => {
+      const themed = new SwipeControl({ theme: 'dark' });
+      const { container, panel } = build(themed);
+
+      themed.setTheme('light');
+      expect(themed.getTheme()).toBe('light');
+      for (const element of [container, panel]) {
+        expect(element.classList.contains('swipe-theme-light')).toBe(true);
+        expect(element.classList.contains('swipe-theme-dark')).toBe(false);
+      }
+
+      themed.setTheme('auto');
+      for (const element of [container, panel]) {
+        expect(element.classList.contains('swipe-theme-light')).toBe(false);
+        expect(element.classList.contains('swipe-theme-dark')).toBe(false);
+      }
+    });
+  });
+
   describe('setOrientation', () => {
     it('should set orientation to horizontal', () => {
       control.setOrientation('horizontal');
